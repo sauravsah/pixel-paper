@@ -292,7 +292,11 @@ async function main(): Promise<void> {
   const badAds: Array<[string, Record<string, unknown>]> = [
     ['a javascript: destination', { ...AD, destinationUrl: 'javascript:alert(1)' }],
     ['a data: destination', { ...AD, destinationUrl: 'data:text/html,<script>x</script>' }],
-    ['a data: image', { ...AD, imageUrl: 'data:image/png;base64,iVBORw0KGgo=' }],
+    // A bounded data:image is a VALID logo attachment (see parseSafeImageSrc), so
+    // the rejection cases below are images that are still not allowed: a script
+    // dressed as an image, and a real image type that is off the allowlist.
+    ['a data:text/html in the image field', { ...AD, imageUrl: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==' }],
+    ['an off-allowlist image type', { ...AD, imageUrl: 'data:image/tiff;base64,SGVsbG8h' }],
     ['a missing brand name', { ...AD, brandName: '' }],
     ['a missing headline', { ...AD, headline: '' }],
     ['a missing destination', { ...AD, destinationUrl: '' }],
