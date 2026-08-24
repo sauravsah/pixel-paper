@@ -12,7 +12,7 @@
  *      anything the browser said, and never outside a lock.
  *
  *   2. A booking only becomes 'paid' in `markBookingPaid`, which is reachable
- *      solely from the signature-verified Stripe webhook. No HTTP route the
+ *      solely from the signature-verified Dodo webhook. No HTTP route the
  *      browser can reach writes that value.
  */
 
@@ -334,7 +334,7 @@ export type CreateBookingResult =
  * The page is locked first, so the availability check and the insert cannot be
  * interleaved with a competing attempt on the same pixels. The booking is
  * created as 'pending' and nothing about it is permanent: it claims no pixels
- * beyond a soft hold until Stripe's webhook confirms real money arrived.
+ * beyond a soft hold until Dodo's webhook confirms real money arrived.
  */
 export async function createPendingBooking(
   input: CreateBookingInput
@@ -372,9 +372,9 @@ export async function createPendingBooking(
 
     const booking = toBooking(bookingRows.rows[0]);
 
-    // Stored now so nothing the buyer typed is lost across the redirect to
-    // Stripe. Inert until the booking is paid, because every render joins on
-    // status = 'paid'.
+    // Stored now so nothing the buyer typed is lost across the redirect to the
+    // payment provider. Inert until the booking is paid, because every render
+    // joins on status = 'paid'.
     await client.query(
       `INSERT INTO advertisements
          (booking_id, brand_name, headline, description, destination_url, image_url, cta_text)
@@ -464,10 +464,10 @@ export async function getAdForBooking(bookingId: string): Promise<AdContent | nu
 // ---------------------------------------------------------------------------
 
 /**
- * Claim a Stripe event id.
+ * Claim a webhook event id.
  *
  * Returns true the first time an event is seen and false for every replay, so
- * the handler can return 200 immediately without repeating any work. Stripe
+ * the handler can return 200 immediately without repeating any work. Dodo
  * retries aggressively and can deliver the same event more than once even
  * without a failure, so this is a normal path, not an error path.
  */
@@ -489,7 +489,7 @@ export async function claimWebhookEvent(
  * Give a claimed event id back after the handler failed.
  *
  * Without this, a handler that throws would have already consumed the event id,
- * and Stripe's retry would be waved through as a duplicate — turning a
+ * and Dodo's retry would be waved through as a duplicate — turning a
  * transient error into a permanently lost payment confirmation.
  */
 export async function releaseWebhookEvent(eventId: string): Promise<void> {
@@ -507,8 +507,8 @@ export type PaymentOutcome =
   | { outcome: 'not-found' };
 
 export interface MarkPaidInput {
-  sessionId: string;
-  paymentIntentId: string | null;
+  bookingId: string;
+  paymentId: string | null;
   amountCents: number;
   currency: string;
   buyerEmail: string | null;
@@ -516,7 +516,7 @@ export interface MarkPaidInput {
 
 /**
  * Promote a booking to permanently claimed. Called only from the webhook handler,
- * only after `stripe.webhooks.constructEvent` has verified the signature.
+ * only after the Dodo signature has been verified.
  *
  * The page is locked and the rectangle re-checked against paid bookings one last
  * time. In the rare case two people paid for overlapping pixels in the same
@@ -526,7 +526,7 @@ export interface MarkPaidInput {
  * conflicting row appears between the check and the update; that path is reported
  * as the same 'conflict' outcome, because a refusal from the database means
  * exactly what a refusal from the check means, and the buyer is owed their money
- * back either way. Reporting it as an error instead would leave Stripe retrying
+ * back either way. Reporting it as an error instead would leave Dodo retrying
  * an event that can never succeed while holding a charge nobody can honour.
  */
 export async function markBookingPaid(input: MarkPaidInput): Promise<PaymentOutcome> {
@@ -552,8 +552,8 @@ export async function markBookingPaid(input: MarkPaidInput): Promise<PaymentOutc
 async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<PaymentOutcome> {
   return withTransaction(async (client) => {
     const existing = await client.query<Record<string, any>>(
-      `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE stripe_session_id = $1 FOR UPDATE`,
-      [input.sessionId]
+      `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE id = $1 FOR UPDATE`,
+      [input.bookingId]
     );
 
     const row = existing.rows[0];
@@ -593,10 +593,16 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
                 buyer_email = COALESCE($3, buyer_email)
           WHERE id = $1
           RETURNING ${BOOKING_COLUMNS}`,
-        [booking.id, input.paymentIntentId, input.buyerEmail]
+        [booking.id, input.paymentId, input.buyerEmail]
       );
 
       const paid = toBooking(updated.rows[0]);
+
+      // The order's unique key. Prefer the provider's session id (already stored
+      // on the booking), fall back to the payment id, and finally the booking id
+      // — always a stable, non-null value, which is what makes a replayed webhook
+      // a no-op via ON CONFLICT rather than a second order row.
+      const orderKey = paid.stripeSessionId ?? input.paymentId ?? paid.id;
 
       await client.query(
         `INSERT INTO orders
@@ -606,8 +612,8 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
          ON CONFLICT (stripe_session_id) DO NOTHING`,
         [
           paid.id,
-          input.sessionId,
-          input.paymentIntentId,
+          orderKey,
+          input.paymentId,
           input.amountCents / 100,
           input.amountCents,
           input.currency,

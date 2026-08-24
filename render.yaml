@@ -19,18 +19,22 @@ services:
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     # Render restarts the service if this stops returning 200. /api/health also
-    # reports database + Stripe readiness, so a green check means fully wired.
+    # reports database + payments readiness, so a green check means fully wired.
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      # Dodo talks to test mode unless this says otherwise. Kept in-file (not a
+      # secret) so a Blueprint deploy never accidentally charges real cards.
+      - key: DODO_PAYMENTS_ENVIRONMENT
+        value: test_mode
       # PORT is intentionally omitted — Render injects it and the server reads it.
       # Values entered in the Render dashboard, never committed:
       - key: DATABASE_URL
         sync: false
-      - key: STRIPE_SECRET_KEY
+      - key: DODO_PAYMENTS_API_KEY
         sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
+      - key: DODO_PRODUCT_ID
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: DODO_PAYMENTS_WEBHOOK_KEY
         sync: false

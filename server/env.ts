@@ -4,11 +4,10 @@
  *
  * Every secret this server needs is read here, once, and nowhere else.
  *
- * Nothing in this file is ever sent to the browser. The only value that reaches
- * the client is the Stripe *publishable* key, handed over deliberately by
- * GET /api/config. `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` never leave
- * the server process — they are not imported by any file under src/, and Vite
- * would not expose them anyway since they carry no VITE_ prefix.
+ * Nothing in this file is ever sent to the browser. No payment secret leaves the
+ * server process: the Dodo API key and the webhook signing key are not imported
+ * by any file under src/, and Vite would not expose them anyway since they carry
+ * no VITE_ prefix.
  */
 
 import dotenv from 'dotenv';
@@ -19,15 +18,18 @@ import dotenv from 'dotenv';
 // secrets always win over any committed file.
 dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
+export type DodoEnvironment = 'test_mode' | 'live_mode';
+
 export interface Env {
   port: number;
   nodeEnv: string;
   isProduction: boolean;
   databaseUrl: string | undefined;
-  stripeSecretKey: string | undefined;
-  stripePublishableKey: string | undefined;
-  stripeWebhookSecret: string | undefined;
-  /** Overrides the auto-detected origin used for Stripe return URLs. */
+  dodoApiKey: string | undefined;
+  dodoWebhookKey: string | undefined;
+  dodoProductId: string | undefined;
+  dodoEnvironment: DodoEnvironment;
+  /** Overrides the auto-detected origin used for payment return URLs. */
   publicBaseUrl: string | undefined;
 }
 
@@ -38,20 +40,30 @@ function clean(value: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/**
+ * The Dodo environment, defaulting to test mode. Only an explicit `live_mode`
+ * opts in to charging real cards; anything unset, misspelled or blank stays on
+ * the safe side.
+ */
+function cleanEnvironment(value: string | undefined): DodoEnvironment {
+  return clean(value) === 'live_mode' ? 'live_mode' : 'test_mode';
+}
+
 export const env: Env = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   databaseUrl: clean(process.env.DATABASE_URL),
-  stripeSecretKey: clean(process.env.STRIPE_SECRET_KEY),
-  stripePublishableKey: clean(process.env.STRIPE_PUBLISHABLE_KEY),
-  stripeWebhookSecret: clean(process.env.STRIPE_WEBHOOK_SECRET),
+  dodoApiKey: clean(process.env.DODO_PAYMENTS_API_KEY),
+  dodoWebhookKey: clean(process.env.DODO_PAYMENTS_WEBHOOK_KEY),
+  dodoProductId: clean(process.env.DODO_PRODUCT_ID),
+  dodoEnvironment: cleanEnvironment(process.env.DODO_PAYMENTS_ENVIRONMENT),
   publicBaseUrl: clean(process.env.PUBLIC_BASE_URL),
 };
 
 export interface ReadinessReport {
   databaseReady: boolean;
-  stripeReady: boolean;
+  paymentsReady: boolean;
   webhookReady: boolean;
   missing: string[];
 }
@@ -61,14 +73,14 @@ export function readiness(): ReadinessReport {
   const missing: string[] = [];
 
   if (!env.databaseUrl) missing.push('DATABASE_URL');
-  if (!env.stripeSecretKey) missing.push('STRIPE_SECRET_KEY');
-  if (!env.stripePublishableKey) missing.push('STRIPE_PUBLISHABLE_KEY');
-  if (!env.stripeWebhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
+  if (!env.dodoApiKey) missing.push('DODO_PAYMENTS_API_KEY');
+  if (!env.dodoProductId) missing.push('DODO_PRODUCT_ID');
+  if (!env.dodoWebhookKey) missing.push('DODO_PAYMENTS_WEBHOOK_KEY');
 
   return {
     databaseReady: Boolean(env.databaseUrl),
-    stripeReady: Boolean(env.stripeSecretKey && env.stripePublishableKey),
-    webhookReady: Boolean(env.stripeWebhookSecret),
+    paymentsReady: Boolean(env.dodoApiKey && env.dodoProductId),
+    webhookReady: Boolean(env.dodoWebhookKey),
     missing,
   };
 }
@@ -76,7 +88,7 @@ export function readiness(): ReadinessReport {
 /**
  * Print exactly which credentials are missing and precisely where to get them.
  *
- * Only the four values that actually matter are ever mentioned.
+ * Only the values that actually matter are ever mentioned.
  */
 export function printStartupBanner(): void {
   const report = readiness();
@@ -86,9 +98,9 @@ export function printStartupBanner(): void {
   console.log('  ------------------');
   console.log(`  Database   ${report.databaseReady ? 'connected' : 'NOT CONFIGURED'}`);
   console.log(
-    `  Stripe     ${report.stripeReady ? `configured${env.stripeSecretKey?.startsWith('sk_test_') ? ' (test mode)' : ''}` : 'NOT CONFIGURED'}`
+    `  Payments   ${report.paymentsReady ? `configured (Dodo ${env.dodoEnvironment === 'live_mode' ? 'live' : 'test'} mode)` : 'NOT CONFIGURED'}`
   );
-  console.log(`  Webhook    ${report.webhookReady ? 'signing secret present' : 'NOT CONFIGURED'}`);
+  console.log(`  Webhook    ${report.webhookReady ? 'signing key present' : 'NOT CONFIGURED'}`);
 
   if (report.missing.length === 0) {
     console.log('');
@@ -109,17 +121,17 @@ export function printStartupBanner(): void {
     console.log('');
   }
 
-  if (!env.stripeSecretKey || !env.stripePublishableKey) {
-    console.log('  STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY');
-    console.log('    dashboard.stripe.com/test/apikeys  (keep Test mode on)');
-    console.log('    Secret key starts sk_test_, publishable key starts pk_test_');
+  if (!env.dodoApiKey || !env.dodoProductId) {
+    console.log('  DODO_PAYMENTS_API_KEY and DODO_PRODUCT_ID');
+    console.log('    app.dodopayments.com > Developer > API Keys (use a test-mode key)');
+    console.log('    Create a "pay what you want" product and copy its product id.');
     console.log('');
   }
 
-  if (!env.stripeWebhookSecret) {
-    console.log('  STRIPE_WEBHOOK_SECRET');
-    console.log('    Run:  stripe listen --forward-to localhost:3000/api/stripe/webhook');
-    console.log('    Copy the whsec_... value it prints.');
+  if (!env.dodoWebhookKey) {
+    console.log('  DODO_PAYMENTS_WEBHOOK_KEY');
+    console.log('    app.dodopayments.com > Developer > Webhooks > add your endpoint');
+    console.log('    Copy the signing secret it shows.');
     console.log('');
   }
 

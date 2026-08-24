@@ -17,8 +17,8 @@
  * is not this one.
  *
  * It does not decide that anything has been paid for. There is no state here that
- * could be flipped to make a booking look complete. Returning from Stripe puts a
- * session id in the URL, and all that buys you is the right to ask the server what
+ * could be flipped to make a booking look complete. Returning from checkout puts a
+ * booking id in the URL, and all that buys you is the right to ask the server what
  * happened — which is what `ClaimedConfirmation` spends its time doing.
  *
  * Availability is the same story. The occupied areas below are what the server
@@ -71,9 +71,9 @@ const FOCUS_EASE = [0.35, 0, 0.15, 1] as const;
  * time round.
  */
 interface Entry {
-  /** Back from a completed Stripe form. Proof of nothing; a question to ask. */
-  sessionId: string | null;
-  /** Back from abandoning Stripe. Nothing was charged. */
+  /** Back from a completed checkout form. Proof of nothing; a question to ask. */
+  bookingId: string | null;
+  /** Back from abandoning checkout. Nothing was charged. */
   cancelled: boolean;
   /** A shared link to somebody's claimed space. */
   spaceId: string | null;
@@ -81,14 +81,14 @@ interface Entry {
 
 function readEntry(): Entry {
   if (typeof window === 'undefined') {
-    return { sessionId: null, cancelled: false, spaceId: null };
+    return { bookingId: null, cancelled: false, spaceId: null };
   }
 
   const params = new URLSearchParams(window.location.search);
   const checkout = params.get('checkout');
 
   return {
-    sessionId: checkout === 'success' ? params.get('session_id') : null,
+    bookingId: checkout === 'success' ? params.get('booking') : null,
     cancelled: checkout === 'cancelled',
     spaceId: params.get('space'),
   };
@@ -139,7 +139,7 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false);
 
   // ---- Arrivals from elsewhere -------------------------------------------
-  const [sessionId, setSessionId] = useState<string | null>(ENTRY.sessionId);
+  const [bookingId, setBookingId] = useState<string | null>(ENTRY.bookingId);
   const [pendingSpaceId, setPendingSpaceId] = useState<string | null>(ENTRY.spaceId);
   const [notice, setNotice] = useState<Notice | null>(
     ENTRY.cancelled
@@ -207,7 +207,7 @@ export default function App() {
 
   /** Tidy the query string so a refresh is a plain visit. */
   useEffect(() => {
-    if (!ENTRY.sessionId && !ENTRY.cancelled && !ENTRY.spaceId) return;
+    if (!ENTRY.bookingId && !ENTRY.cancelled && !ENTRY.spaceId) return;
     window.history.replaceState({}, '', window.location.pathname);
   }, []);
 
@@ -359,7 +359,7 @@ export default function App() {
 
   const handleViewSpace = useCallback(
     (pageNumber: number) => {
-      setSessionId(null);
+      setBookingId(null);
       setIsCreatorOpen(false);
       setIsAboutOpen(false);
       setIsSelectMode(false);
@@ -371,7 +371,7 @@ export default function App() {
   );
 
   const handleDismissConfirmation = useCallback(() => {
-    setSessionId(null);
+    setBookingId(null);
     setIsCreatorOpen(false);
     setSelection(null);
     void refreshPaper();
@@ -391,12 +391,12 @@ export default function App() {
         consequence: 'nothing can be booked, because there is nowhere to record it',
       });
     }
-    if (!config.readiness.stripe) {
-      notes.push({ key: 'STRIPE_SECRET_KEY', consequence: 'checkout cannot start' });
+    if (!config.readiness.payments) {
+      notes.push({ key: 'DODO_PAYMENTS_API_KEY', consequence: 'checkout cannot start' });
     }
     if (!config.readiness.webhook) {
       notes.push({
-        key: 'STRIPE_WEBHOOK_SECRET',
+        key: 'DODO_PAYMENTS_WEBHOOK_KEY',
         consequence: 'payments can be taken but never confirmed, so no space would go live',
       });
     }
@@ -405,7 +405,7 @@ export default function App() {
   }, [config]);
 
   const liveKeyWarning = Boolean(
-    config && config.readiness.stripe && !config.readiness.testMode
+    config && config.readiness.payments && !config.readiness.testMode
   );
 
   /** The invented, fully-packed paper shown while demo mode is on. */
@@ -581,7 +581,7 @@ export default function App() {
       {liveKeyWarning && !bannerDismissed && (
         <div className="flex items-center gap-2 border-b border-[#7c3aed] bg-[#7c3aed] px-4 py-2 font-data text-[11px] font-bold uppercase tracking-wider text-white dark:border-[#a78bfa] dark:bg-[#a78bfa]">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>Live Stripe keys are in use. Real cards will be charged.</span>
+          <span>Dodo is in live mode. Real cards will be charged.</span>
         </div>
       )}
 
@@ -650,7 +650,7 @@ export default function App() {
       {/* ==================================================================
           A SELECTION, ALWAYS REACHABLE ON MOBILE
           ================================================================== */}
-      {selection && !isCreatorOpen && !sessionId && (
+      {selection && !isCreatorOpen && !bookingId && (
         <div className="sticky bottom-0 z-30 flex items-center justify-between gap-3 border-t-2 border-[#191627] bg-[#faf9fe] px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-[#332f45] dark:bg-[#131120] lg:hidden">
           <div className="min-w-0">
             <div className="font-data text-[10px] uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
@@ -769,9 +769,9 @@ export default function App() {
         onStartBuying={handleEnterSelectMode}
       />
 
-      {sessionId && (
+      {bookingId && (
         <ClaimedConfirmation
-          sessionId={sessionId}
+          bookingId={bookingId}
           onViewSpace={handleViewSpace}
           onDismiss={handleDismissConfirmation}
         />

@@ -15,12 +15,12 @@
     "lint": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
     "test": "node --experimental-strip-types --test scripts/logic-test.ts scripts/validation-test.ts",
-    "test:e2e": "tsx scripts/e2e-test.ts",
-    "stripe:listen": "stripe listen --forward-to localhost:3000/api/stripe/webhook"
+    "test:e2e": "tsx scripts/e2e-test.ts"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
     "cors": "^2.8.6",
+    "dodopayments": "^2.48.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
@@ -28,7 +28,7 @@
     "pg": "^8.13.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "stripe": "^22.5.0"
+    "standardwebhooks": "^1.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",

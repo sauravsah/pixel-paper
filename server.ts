@@ -2,11 +2,11 @@
  * THE INTERNET TIMES — SERVER ENTRY POINT
  * =======================================
  *
- * Wires the API, the Stripe webhook, and Vite (dev) or the built assets (prod).
+ * Wires the API, the Dodo webhook, and Vite (dev) or the built assets (prod).
  *
  * MIDDLEWARE ORDER MATTERS
  * ------------------------
- * The webhook is mounted with `express.raw` before `express.json`. Stripe signs
+ * The webhook is mounted with `express.raw` before `express.json`. Dodo signs
  * the exact bytes of the request body, so if a JSON parser touches it first the
  * signature can never be verified again. This ordering is load-bearing; moving
  * the webhook below the JSON parser breaks every payment.
@@ -20,7 +20,7 @@ import cors from 'cors';
 import { env, printStartupBanner, readiness } from './server/env.ts';
 import { closePool, isDatabaseConfigured, migrate, pingDatabase } from './server/db.ts';
 import { createApiRouter } from './server/routes.ts';
-import { handleStripeWebhook } from './server/webhook.ts';
+import { handleDodoWebhook } from './server/webhook.ts';
 import { MAX_IMAGE_BYTES } from './shared/field-rules.ts';
 
 async function startServer(): Promise<void> {
@@ -29,12 +29,12 @@ async function startServer(): Promise<void> {
   app.disable('x-powered-by');
 
   // ---------------------------------------------------------------------------
-  // Stripe webhook. Raw body, mounted first. Do not move.
+  // Dodo webhook. Raw body, mounted first. Do not move.
   // ---------------------------------------------------------------------------
   app.post(
-    '/api/stripe/webhook',
-    express.raw({ type: 'application/json', limit: '1mb' }),
-    handleStripeWebhook
+    '/api/webhooks/dodo',
+    express.raw({ type: '*/*', limit: '1mb' }),
+    handleDodoWebhook
   );
 
   // ---------------------------------------------------------------------------
@@ -100,7 +100,9 @@ async function startServer(): Promise<void> {
 
     const missing = readiness().missing;
     if (missing.length === 0) {
-      console.log('  Ready to take payments (Stripe test mode).');
+      console.log(
+        `  Ready to take payments (Dodo ${env.dodoEnvironment === 'live_mode' ? 'live' : 'test'} mode).`
+      );
       console.log('');
     }
   });

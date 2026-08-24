@@ -6,8 +6,8 @@
  *
  * That is deliberate and it is the whole point: there is exactly one
  * implementation of the pricing algorithm in this codebase, so the number the
- * buyer watches while dragging can never drift away from the number Stripe
- * charges. The server still recomputes every price from raw integer
+ * buyer watches while dragging can never drift away from the number the
+ * provider charges. The server still recomputes every price from raw integer
  * coordinates before it creates a payment session — the client's figure is
  * treated as a preview and nothing more — but both sides run this same code.
  *
@@ -47,7 +47,7 @@ export interface Quote {
   positionMultiplier: number;
   /** What a single pixel in this exact rectangle actually costs. */
   effectiveRate: number;
-  /** Total in whole cents. This is the figure sent to Stripe. */
+  /** Total in whole cents. This is the figure sent to the payment provider. */
   amountCents: number;
   /** Total in dollars, derived from `amountCents`. For display only. */
   totalPrice: number;

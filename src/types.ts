@@ -26,10 +26,9 @@ export type { PriceMapCell, PricingConfig, PricingTier, Quote, Rect };
 export interface SiteConfig {
   pricing: PricingConfig;
   priceMap: PriceMapCell[];
-  stripePublishableKey: string | null;
   readiness: {
     database: boolean;
-    stripe: boolean;
+    payments: boolean;
     webhook: boolean;
     testMode: boolean;
   };
@@ -115,7 +114,6 @@ export interface AdDraft {
 export interface CheckoutResponse {
   bookingId: string;
   checkoutUrl: string;
-  sessionId: string;
   quote: Quote;
 }
 

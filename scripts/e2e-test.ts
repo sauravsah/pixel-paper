@@ -5,30 +5,30 @@
  *     npm run dev          # in one terminal
  *     npm run test:e2e     # in another
  *
- * Exercises the real server, the real database, and real Stripe test-mode API
- * calls. It checks the things that would cost money or lose pixels if they were
- * wrong: that prices are computed server-side, that coordinates are validated,
- * that overlapping areas cannot be sold twice, that a browser cannot mark a
- * booking paid, and that a replayed webhook does not duplicate anything.
+ * Exercises the real server, the real database, and the real Dodo Payments
+ * test-mode configuration. It checks the things that would cost money or lose
+ * pixels if they were wrong: that prices are computed server-side, that
+ * coordinates are validated, that overlapping areas cannot be sold twice, that a
+ * browser cannot mark a booking paid, and that a replayed webhook does not
+ * duplicate anything.
  *
  * WHY THIS SCRIPT CAN CONFIRM PAYMENTS
  * ------------------------------------
  * To test the webhook path without a human typing a card number, it builds a
- * `checkout.session.completed` payload and signs it with STRIPE_WEBHOOK_SECRET
- * using Stripe's own `generateTestHeaderString`. That is the same verification
- * the live webhook performs, so the test proves the real signature check works —
- * it does not bypass it.
+ * `payment.succeeded` event and signs it with DODO_PAYMENTS_WEBHOOK_KEY using the
+ * Standard Webhooks scheme (`webhook-id`/`webhook-timestamp`/`webhook-signature`),
+ * exactly as Dodo does. That is the same verification the live webhook performs,
+ * so the test proves the real signature check works — it does not bypass it.
  *
- * Because that capability could otherwise mark bookings paid without payment,
- * the script REFUSES TO RUN unless STRIPE_SECRET_KEY is a test key. It cannot
- * touch a live-mode deployment. It also deletes everything it created on the way
- * out.
+ * Because that capability could otherwise mark bookings paid without payment, the
+ * script REFUSES TO RUN unless the server is in Dodo test mode. It cannot touch a
+ * live-mode deployment. It also deletes everything it created on the way out.
  *
- * Nothing in this file is part of the application. The server has no endpoint
- * that does any of this.
+ * Nothing in this file is part of the application. The server has no endpoint that
+ * does any of this.
  */
 
-import Stripe from 'stripe';
+import { Webhook } from 'standardwebhooks';
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import { calculateQuote } from '../shared/pricing.ts';
@@ -115,40 +115,51 @@ async function findFreeRect(
   return null;
 }
 
-/** Build and sign a synthetic checkout.session.completed event. */
-function signedWebhook(sessionId: string, amountCents: number, eventId: string) {
+/**
+ * Build and sign a synthetic `payment.succeeded` event.
+ *
+ * The webhook finds its booking through `metadata.bookingId` — the same field the
+ * checkout route sets — never through anything the browser returned. The signature
+ * is produced over the exact payload bytes with the Standard Webhooks scheme.
+ */
+function signedWebhook(
+  bookingId: string,
+  amountCents: number,
+  eventId: string,
+  paymentId = `pay_selftest_${eventId}`
+) {
   const payload = JSON.stringify({
-    id: eventId,
-    object: 'event',
-    type: 'checkout.session.completed',
-    created: Math.floor(Date.now() / 1000),
+    business_id: 'biz_selftest',
+    type: 'payment.succeeded',
+    timestamp: new Date().toISOString(),
     data: {
-      object: {
-        id: sessionId,
-        object: 'checkout.session',
-        payment_status: 'paid',
-        status: 'complete',
-        amount_total: amountCents,
-        currency: 'usd',
-        payment_intent: `pi_selftest_${eventId}`,
-        customer_details: { email: AD.buyerEmail },
-        customer_email: AD.buyerEmail,
-      },
+      payment_id: paymentId,
+      total_amount: amountCents,
+      currency: 'USD',
+      status: 'succeeded',
+      customer: { email: AD.buyerEmail },
+      metadata: { bookingId },
     },
   });
 
-  const header = Stripe.webhooks.generateTestHeaderString({
-    payload,
-    secret: env.stripeWebhookSecret as string,
-  });
+  const webhook = new Webhook(env.dodoWebhookKey as string);
+  const timestamp = new Date();
+  const signature = webhook.sign(eventId, timestamp, payload);
 
-  return { payload, header };
+  return {
+    payload,
+    headers: {
+      'webhook-id': eventId,
+      'webhook-timestamp': Math.floor(timestamp.getTime() / 1000).toString(),
+      'webhook-signature': signature,
+    },
+  };
 }
 
-async function postWebhook(payload: string, header: string) {
-  const res = await fetch(`${BASE}/api/stripe/webhook`, {
+async function postWebhook(payload: string, headers: Record<string, string>) {
+  const res = await fetch(`${BASE}/api/webhooks/dodo`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'stripe-signature': header },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: payload,
   });
   return { status: res.status, text: await res.text() };
@@ -178,26 +189,32 @@ async function main(): Promise<void> {
   }
   check('DATABASE_URL is set', true);
 
-  if (!env.stripeSecretKey) {
-    console.error('\n  STRIPE_SECRET_KEY is not set. Add it to .env.local.\n');
+  if (!env.dodoApiKey) {
+    console.error('\n  DODO_PAYMENTS_API_KEY is not set. Add it to .env.local.\n');
     process.exit(1);
   }
 
-  if (!env.stripeSecretKey.startsWith('sk_test_')) {
+  if (env.dodoEnvironment === 'live_mode') {
     console.error('');
-    console.error('  REFUSING TO RUN: STRIPE_SECRET_KEY is not a test key.');
+    console.error('  REFUSING TO RUN: DODO_PAYMENTS_ENVIRONMENT is live_mode.');
     console.error('  This script can confirm bookings via signed synthetic webhooks and');
     console.error('  must never be pointed at a live-mode deployment.');
     console.error('');
     process.exit(1);
   }
-  check('Stripe is in test mode', true);
+  check('Dodo is in test mode', true);
 
-  if (!env.stripeWebhookSecret) {
-    console.error('\n  STRIPE_WEBHOOK_SECRET is not set. Add it to .env.local.\n');
+  if (!env.dodoProductId) {
+    console.error('\n  DODO_PRODUCT_ID is not set. Add it to .env.local.\n');
     process.exit(1);
   }
-  check('STRIPE_WEBHOOK_SECRET is set', true);
+  check('DODO_PRODUCT_ID is set', true);
+
+  if (!env.dodoWebhookKey) {
+    console.error('\n  DODO_PAYMENTS_WEBHOOK_KEY is not set. Add it to .env.local.\n');
+    process.exit(1);
+  }
+  check('DODO_PAYMENTS_WEBHOOK_KEY is set', true);
 
   // -------------------------------------------------------------------------
   section('Configuration and secrets');
@@ -206,16 +223,17 @@ async function main(): Promise<void> {
   const configText = JSON.stringify(config.json);
 
   check('GET /api/config returns 200', config.status === 200);
-  check('config exposes the publishable key', typeof config.json.stripePublishableKey === 'string');
+  check('config reports that payments are configured', config.json.readiness?.payments === true);
+  check('config reports the provider is in test mode', config.json.readiness?.testMode === true);
   check(
-    'config does NOT leak the secret key',
-    !configText.includes('sk_test_') && !configText.includes('sk_live_'),
-    'a secret key appeared in the config response'
+    'config does NOT leak the Dodo API key',
+    !configText.includes(env.dodoApiKey),
+    'the Dodo API key appeared in the config response'
   );
   check(
-    'config does NOT leak the webhook secret',
-    !configText.includes('whsec_'),
-    'the webhook secret appeared in the config response'
+    'config does NOT leak the webhook signing key',
+    !configText.includes(env.dodoWebhookKey),
+    'the webhook signing key appeared in the config response'
   );
   check(
     'config does NOT leak the database URL',
@@ -314,12 +332,11 @@ async function main(): Promise<void> {
   check('POST /api/checkout returns 200', checkout.status === 200, JSON.stringify(checkout.json));
 
   const bookingId: string = checkout.json.bookingId;
-  const sessionId: string = checkout.json.sessionId;
 
   check('a booking id came back', typeof bookingId === 'string');
-  check('a real Stripe Checkout URL came back', String(checkout.json.checkoutUrl).startsWith('https://'));
+  check('a hosted checkout URL came back', String(checkout.json.checkoutUrl).startsWith('https://'));
   check(
-    'the amount Stripe was given is the server amount',
+    'the amount handed to the provider is the server amount',
     checkout.json.quote?.amountCents === expected.amountCents
   );
 
@@ -345,7 +362,7 @@ async function main(): Promise<void> {
     )
   );
 
-  const statusBefore = await api('GET', `/api/checkout/status?session_id=${sessionId}`);
+  const statusBefore = await api('GET', `/api/checkout/status?booking_id=${bookingId}`);
   check('status endpoint reports pending', statusBefore.json.status === 'pending');
   check('status endpoint withholds the amount until paid', statusBefore.json.booking?.amountPaid === null);
 
@@ -355,16 +372,20 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------------
   section('Only a validly signed webhook can confirm payment');
 
-  const unsigned = await fetch(`${BASE}/api/stripe/webhook`, {
+  const unsigned = await fetch(`${BASE}/api/webhooks/dodo`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'checkout.session.completed' }),
+    body: JSON.stringify({ type: 'payment.succeeded' }),
   });
   check('a webhook with no signature is refused', unsigned.status === 400, `got ${unsigned.status}`);
 
   const badSig = await postWebhook(
-    JSON.stringify({ id: 'evt_forged', type: 'checkout.session.completed', data: { object: {} } }),
-    't=1,v1=0000000000000000000000000000000000000000000000000000000000000000'
+    JSON.stringify({ type: 'payment.succeeded', data: { metadata: { bookingId } } }),
+    {
+      'webhook-id': 'evt_forged',
+      'webhook-timestamp': Math.floor(Date.now() / 1000).toString(),
+      'webhook-signature': 'v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    }
   );
   check('a webhook with a forged signature is refused', badSig.status === 400, `got ${badSig.status}`);
 
@@ -375,8 +396,8 @@ async function main(): Promise<void> {
   check('the forgery attempts changed nothing', stillPending[0]?.status === 'pending');
 
   const eventId = `evt_selftest_${Date.now()}`;
-  const { payload, header } = signedWebhook(sessionId, expected.amountCents, eventId);
-  const accepted = await postWebhook(payload, header);
+  const { payload, headers } = signedWebhook(bookingId, expected.amountCents, eventId);
+  const accepted = await postWebhook(payload, headers);
   check('a correctly signed webhook is accepted', accepted.status === 200, accepted.text);
 
   const afterWebhook = await query<{ status: string; paid_at: string }>(
@@ -408,8 +429,8 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------------
   section('Webhook replay is idempotent');
 
-  const replay1 = await postWebhook(payload, header);
-  const replay2 = await postWebhook(payload, header);
+  const replay1 = await postWebhook(payload, headers);
+  const replay2 = await postWebhook(payload, headers);
   check('a replayed event is accepted with 200', replay1.status === 200 && replay2.status === 200);
 
   const counts = await query<Record<string, string>>(
@@ -422,15 +443,15 @@ async function main(): Promise<void> {
   check('still exactly one order', counts[0]?.orders === '1', `found ${counts[0]?.orders}`);
   check('still exactly one booking', counts[0]?.bookings === '1');
 
-  // A different event id carrying the same session must also not double up.
-  const second = signedWebhook(sessionId, expected.amountCents, `evt_selftest_b_${Date.now()}`);
-  await postWebhook(second.payload, second.header);
+  // A different event id for the same, already-paid booking must also not double up.
+  const second = signedWebhook(bookingId, expected.amountCents, `evt_selftest_b_${Date.now()}`);
+  await postWebhook(second.payload, second.headers);
   const afterSecond = await query<{ n: string }>(
     'SELECT count(*)::text AS n FROM orders WHERE booking_id = $1',
     [bookingId]
   );
   check(
-    'a new event id for an already-paid session creates no second order',
+    'a new event id for an already-paid booking creates no second order',
     afterSecond[0]?.n === '1',
     `found ${afterSecond[0]?.n}`
   );
@@ -592,11 +613,11 @@ async function main(): Promise<void> {
 
     if (secondBuy.status === 200) {
       const evt = signedWebhook(
-        secondBuy.json.sessionId,
+        secondBuy.json.bookingId,
         secondBuy.json.quote.amountCents,
         `evt_selftest_c_${Date.now()}`
       );
-      await postWebhook(evt.payload, evt.header);
+      await postWebhook(evt.payload, evt.headers);
 
       const both = await query<{ n: string }>(
         `SELECT count(*)::text AS n FROM pixel_bookings

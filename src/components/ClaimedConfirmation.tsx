@@ -2,16 +2,16 @@
  * SPACE CLAIMED
  * =============
  *
- * Where a buyer lands after paying. Stripe sends them back here with a
- * `session_id`; this screen asks the server what became of it.
+ * Where a buyer lands after paying. The payment provider sends them back here
+ * with a booking id; this screen asks the server what became of it.
  *
  * WHY THIS POLLS INSTEAD OF CELEBRATING IMMEDIATELY
  * -------------------------------------------------
- * Coming back from Stripe with a session id means the buyer finished Stripe's
- * form. It does not mean the money moved, and it certainly is not proof this
- * browser is entitled to claim anything. The booking becomes paid when Stripe's
- * webhook reaches our server and its signature checks out — a conversation this
- * page is not part of.
+ * Coming back from checkout with a booking id means the buyer finished the
+ * payment form. It does not mean the money moved, and it certainly is not proof
+ * this browser is entitled to claim anything. The booking becomes paid when the
+ * payment provider's webhook reaches our server and its signature checks out — a
+ * conversation this page is not part of.
  *
  * So there is a gap, usually under a second, occasionally a few, between the
  * redirect landing and the webhook arriving. Rather than assume, this screen sits
@@ -47,14 +47,14 @@ const MAX_ATTEMPTS = 40;
 const POLL_MS = 1500;
 
 interface ClaimedConfirmationProps {
-  sessionId: string;
+  bookingId: string;
   /** Take the reader to the page their space is on and close this. */
   onViewSpace: (pageNumber: number) => void;
   onDismiss: () => void;
 }
 
 export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
-  sessionId,
+  bookingId,
   onViewSpace,
   onDismiss,
 }) => {
@@ -71,13 +71,13 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
 
   // ---- Ask, and keep asking until there is an answer ----------------------
   useEffect(() => {
-    if (!sessionId || paid || cancelled || takingLong) return;
+    if (!bookingId || paid || cancelled || takingLong) return;
 
     let cancelledEffect = false;
 
     const tick = async () => {
       try {
-        const next = await fetchCheckoutStatus(sessionId);
+        const next = await fetchCheckoutStatus(bookingId);
         if (cancelledEffect) return;
         setStatus(next);
         setError(null);
@@ -86,7 +86,7 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
         }
       } catch (err) {
         if (cancelledEffect) return;
-        // A 404 here means the session id does not match a booking — someone
+        // A 404 here means the booking id does not match a booking — someone
         // arrived with a made-up or very old link.
         if (err instanceof ApiError && err.status === 404) {
           setError('We could not find that checkout. If you were charged, contact us and we will sort it out.');
@@ -104,7 +104,7 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
       cancelledEffect = true;
       window.clearTimeout(timer);
     };
-  }, [sessionId, attempts, paid, cancelled, takingLong]);
+  }, [bookingId, attempts, paid, cancelled, takingLong]);
 
   // ---- A small celebration, once ------------------------------------------
   useEffect(() => {
@@ -309,9 +309,9 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
               Confirming your payment
             </h2>
             <p className="mx-auto max-w-md font-editorial text-sm text-[#514c62] dark:text-[#a49eb6]">
-              Stripe is telling our server directly that the payment went through. We wait for
-              that message rather than take your browser's word for it, which is what makes the
-              claim real. This is usually a second or two.
+              The payment provider is telling our server directly that the payment went through.
+              We wait for that message rather than take your browser's word for it, which is what
+              makes the claim real. This is usually a second or two.
             </p>
             <div className="mx-auto flex max-w-md items-start gap-2 rounded-xs border border-[#e0dcf0] bg-[#f0edfa] p-3 text-left font-data text-[11px] text-[#514c62] dark:border-[#2a2740] dark:bg-[#171526] dark:text-zinc-400">
               <Lock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />

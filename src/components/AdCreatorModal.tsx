@@ -2,22 +2,23 @@
  * CREATE YOUR AD
  * ==============
  *
- * Two steps and then Stripe: write the ad, check the receipt, pay.
+ * Two steps and then checkout: write the ad, check the receipt, pay.
  *
  * WHAT THIS COMPONENT DELIBERATELY CANNOT DO
  * ------------------------------------------
  * It cannot say what the space costs, and it cannot say the space is available.
  * It shows a price so a buyer knows what they are agreeing to, but the number in
  * the button is only ever a copy of what `/api/quote` returned; the amount that
- * reaches Stripe is recomputed from the coordinates inside the same locked
- * transaction that re-checks availability. If the two disagree, the checkout is
- * refused rather than reconciled.
+ * reaches the payment provider is recomputed from the coordinates inside the same
+ * locked transaction that re-checks availability. If the two disagree, the
+ * checkout is refused rather than reconciled.
  *
  * There is also no success step here, which is not an omission. Paying means
- * leaving this page entirely for Stripe's own checkout, so this component is
- * destroyed at that moment. The confirmation is rendered by ClaimedConfirmation
- * from the `session_id` Stripe returns with — the only place a claim can be
- * confirmed, because it is the only place that asks the server.
+ * leaving this page entirely for the payment provider's own checkout, so this
+ * component is destroyed at that moment. The confirmation is rendered by
+ * ClaimedConfirmation from the booking id the provider returns with — the only
+ * place a claim can be confirmed, because it is the only place that asks the
+ * server.
  *
  * NO SIGN-IN
  * ----------
@@ -232,8 +233,8 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
         ad: submission,
       });
 
-      // Leaving for Stripe's hosted page. Card details are typed there, on
-      // Stripe's domain, and never touch this application or its database.
+      // Leaving for the provider's hosted page. Card details are typed there, on
+      // the provider's domain, and never touch this application or its database.
       window.location.href = response.checkoutUrl;
     } catch (error) {
       setSubmitting(false);
@@ -260,9 +261,9 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
           break;
         }
 
-        case 'stripe-not-configured':
+        case 'payments-not-configured':
           setServerError(
-            'Payments are not switched on yet. The Stripe keys are missing from the server configuration.'
+            'Payments are not switched on yet. Dodo Payments is not configured on the server.'
           );
           break;
 
@@ -618,7 +619,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                   />
                   <FieldError field="buyerEmail" />
                   <p className="font-data text-[10px] text-[#6f6a80] dark:text-zinc-500">
-                    No account, no password. Stripe will also ask for an email at payment.
+                    No account, no password. You will also be asked for an email at payment.
                   </p>
                 </fieldset>
               </div>
@@ -855,8 +856,8 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
 
                 <ol className="space-y-2.5">
                   {[
-                    'You are taken to Stripe to pay. Your card details are typed on Stripe’s own page and never reach us.',
-                    'Stripe tells our server directly that the payment succeeded. That message is signature-checked before it is believed.',
+                    'You are taken to a secure checkout page to pay. Your card details are typed there and never reach us.',
+                    'The payment provider tells our server directly that the payment succeeded. That message is signature-checked before it is believed.',
                     'Your pixels are marked claimed and your ad goes live on the page. Permanently.',
                   ].map((text, index) => (
                     <li key={index} className="flex gap-2.5">

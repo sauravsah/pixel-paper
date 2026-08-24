@@ -3,7 +3,7 @@
  * =====================================
  *
  * Everything a buyer types is validated here before it reaches the database or
- * Stripe. Nothing is trusted for having come from our own form.
+ * the payment provider. Nothing is trusted for having come from our own form.
  *
  * The rules themselves — how long a headline may be, what a usable web address
  * looks like, what an email looks like — live in `shared/field-rules.ts`, because

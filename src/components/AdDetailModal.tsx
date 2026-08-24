@@ -8,8 +8,8 @@
  * What it does not show is what the buyer paid. That figure exists in the
  * database and it is deliberately absent from `/api/newspaper` and
  * `/api/spaces/:id`, so it never reaches this component to be leaked. What
- * someone paid for their pixels is between them and Stripe; the going rate for a
- * position is public, and that is a different thing.
+ * someone paid for their pixels is between them and the payment provider; the
+ * going rate for a position is public, and that is a different thing.
  */
 
 import React from 'react';

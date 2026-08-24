@@ -57,7 +57,7 @@ export interface PricingConfig {
 
   /**
    * Floor on any single charge, in cents.
-   * Stripe rejects card charges below 50c USD, so this must stay >= 50.
+   * Card networks reject charges below 50c USD, so this must stay >= 50.
    */
   minChargeCents: number;
 

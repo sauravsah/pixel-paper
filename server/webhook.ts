@@ -1,17 +1,20 @@
 /**
- * THE INTERNET TIMES — STRIPE WEBHOOK
- * ===================================
+ * THE INTERNET TIMES — DODO PAYMENTS WEBHOOK
+ * ==========================================
  *
  * The only place in this codebase where a booking becomes permanently claimed.
  *
  * Four things have to be true before that happens:
  *
- *   1. The request carries a `stripe-signature` header that verifies against
- *      STRIPE_WEBHOOK_SECRET. A browser cannot produce one.
- *   2. The event id has not been handled before. Stripe retries, and can deliver
+ *   1. The request carries `webhook-id`, `webhook-timestamp` and
+ *      `webhook-signature` headers that verify against DODO_PAYMENTS_WEBHOOK_KEY.
+ *      A browser cannot produce them.
+ *   2. The webhook id has not been handled before. Dodo retries, and can deliver
  *      the same event more than once even when nothing failed.
- *   3. The amount Stripe reports matches the amount this server computed and
- *      stored on the booking.
+ *   3. The amount Dodo reports is at least the amount this server computed and
+ *      stored on the booking. Dodo is a merchant of record and may add tax on
+ *      top, so the collected total can legitimately exceed our price — but never
+ *      fall short of it.
  *   4. The pixels are still free, re-checked under the page lock.
  *
  * If the fourth check fails — two people paid for overlapping pixels in the same
@@ -19,11 +22,10 @@
  *
  * The raw request body is required for signature verification, so this handler is
  * mounted with `express.raw` BEFORE any JSON body parser. A parsed-and-restringified
- * body does not reproduce the exact bytes Stripe signed and verification fails.
+ * body does not reproduce the exact bytes Dodo signed and verification fails.
  */
 
 import type { Request, Response } from 'express';
-import type Stripe from 'stripe';
 
 import * as repo from './repository.ts';
 import { isDatabaseConfigured } from './db.ts';
@@ -31,33 +33,37 @@ import {
   constructWebhookEvent,
   isWebhookConfigured,
   refundPayment,
-} from './stripe.ts';
+  type DodoWebhookEvent,
+} from './dodo.ts';
 
 /** Events this handler acts on. Anything else is acknowledged and ignored. */
-const HANDLED_EVENTS = new Set([
-  'checkout.session.completed',
-  'checkout.session.async_payment_succeeded',
-  'checkout.session.async_payment_failed',
-  'checkout.session.expired',
-]);
+const HANDLED_EVENTS = new Set(['payment.succeeded', 'payment.failed']);
 
-export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
+export async function handleDodoWebhook(req: Request, res: Response): Promise<void> {
   if (!isWebhookConfigured()) {
-    console.warn('[webhook] received an event but STRIPE_WEBHOOK_SECRET is not set.');
-    res.status(503).send('Webhook secret not configured');
+    console.warn('[webhook] received an event but DODO_PAYMENTS_WEBHOOK_KEY is not set.');
+    res.status(503).send('Webhook key not configured');
     return;
   }
 
   if (!isDatabaseConfigured()) {
-    // 503 rather than 200: Stripe should retry once the database is reachable.
+    // 503 rather than 200: Dodo should retry once the database is reachable.
     console.error('[webhook] received an event but DATABASE_URL is not set.');
     res.status(503).send('Database not configured');
     return;
   }
 
-  const signature = req.headers['stripe-signature'];
-  if (typeof signature !== 'string') {
-    res.status(400).send('Missing stripe-signature header');
+  // Standard Webhooks signs the body against these three headers together.
+  const webhookId = req.headers['webhook-id'];
+  const webhookSignature = req.headers['webhook-signature'];
+  const webhookTimestamp = req.headers['webhook-timestamp'];
+
+  if (
+    typeof webhookId !== 'string' ||
+    typeof webhookSignature !== 'string' ||
+    typeof webhookTimestamp !== 'string'
+  ) {
+    res.status(400).send('Missing webhook signature headers');
     return;
   }
 
@@ -68,11 +74,15 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     return;
   }
 
-  let event: Stripe.Event;
+  let event: DodoWebhookEvent;
   try {
-    event = constructWebhookEvent(req.body, signature);
+    event = constructWebhookEvent(req.body.toString('utf8'), {
+      'webhook-id': webhookId,
+      'webhook-signature': webhookSignature,
+      'webhook-timestamp': webhookTimestamp,
+    });
   } catch (err: any) {
-    // Either a forgery or a secret mismatch. Both are refusals.
+    // Either a forgery or a key mismatch. Both are refusals.
     console.error('[webhook] signature verification failed:', err.message);
     res.status(400).send(`Webhook Error: ${err.message}`);
     return;
@@ -83,10 +93,13 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     return;
   }
 
-  // Idempotency. A replay returns 200 without repeating any work.
+  // Idempotency. A replay returns 200 without repeating any work. Dodo's
+  // `webhook-id` is stable per delivery, so it is the key. Dodo retries and can
+  // deliver the same event more than once even without a failure, so this is a
+  // normal path, not an error path.
   let firstTime: boolean;
   try {
-    firstTime = await repo.claimWebhookEvent(event.id, event.type);
+    firstTime = await repo.claimWebhookEvent(webhookId, event.type);
   } catch (err: any) {
     console.error('[webhook] could not record event id:', err.message);
     res.status(500).send('Could not record event');
@@ -94,79 +107,89 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   }
 
   if (!firstTime) {
-    console.log(`[webhook] ${event.id} (${event.type}) already handled; ignoring replay.`);
+    console.log(`[webhook] ${webhookId} (${event.type}) already handled; ignoring replay.`);
     res.json({ received: true, duplicate: true });
     return;
   }
 
   try {
     switch (event.type) {
-      case 'checkout.session.completed':
-      case 'checkout.session.async_payment_succeeded':
-        await onPaymentSucceeded(event.data.object as Stripe.Checkout.Session);
+      case 'payment.succeeded':
+        await onPaymentSucceeded(event.data);
         break;
 
-      case 'checkout.session.async_payment_failed':
-      case 'checkout.session.expired':
-        await onCheckoutAbandoned(event.data.object as Stripe.Checkout.Session);
+      case 'payment.failed':
+        await onPaymentFailed(event.data);
         break;
     }
 
     res.json({ received: true });
   } catch (err: any) {
     console.error(`[webhook] handling ${event.type} failed:`, err.message);
-    // 500 asks Stripe to retry. The event id was already claimed, so the retry
+    // 500 asks Dodo to retry. The event id was already claimed, so the retry
     // would be skipped as a duplicate — release it so the retry can do the work.
-    await repo.releaseWebhookEvent(event.id).catch(() => undefined);
+    await repo.releaseWebhookEvent(webhookId).catch(() => undefined);
     res.status(500).send('Handler error');
   }
 }
 
-async function onPaymentSucceeded(session: Stripe.Checkout.Session): Promise<void> {
-  // An asynchronous payment method can complete the session while the money is
-  // still pending. Only 'paid' means funds are secured.
-  if (session.payment_status !== 'paid') {
-    console.log(`[webhook] session ${session.id} is ${session.payment_status}; waiting.`);
+/** Pull our booking id back out of the metadata we set at checkout. */
+function bookingIdFrom(data: Record<string, any>): string | null {
+  const id = data?.metadata?.bookingId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
+  const bookingId = bookingIdFrom(data);
+  if (!bookingId) {
+    console.error('[webhook] payment.succeeded carried no bookingId in its metadata.');
     return;
   }
 
-  const paymentIntentId =
-    typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : session.payment_intent?.id ?? null;
+  const paymentId = typeof data.payment_id === 'string' ? data.payment_id : null;
 
-  const booking = await repo.getBookingBySessionId(session.id);
+  const booking = await repo.getBookingById(bookingId);
   if (!booking) {
-    console.error(`[webhook] no booking for session ${session.id}.`);
+    console.error(`[webhook] no booking for id ${bookingId}.`);
     return;
   }
 
-  // Guard against a session whose amount does not match what this server priced.
-  // Should be impossible — the amount was set server-side when the session was
-  // created — so a mismatch means something is wrong and no pixels are claimed.
+  // Dodo is a merchant of record: the total it collects can include tax added on
+  // top of our price, so the received amount must be at least what we charged,
+  // not exactly equal. A total *below* our price is the anomaly.
   //
-  // Deliberately not auto-refunded. An unexplained mismatch is the one case where
-  // this server does not know what actually happened, and guessing with someone
-  // else's money is worse than stopping and saying so. The booking lapses with
-  // its hold on its own; the payment needs a human.
-  const amountReceived = session.amount_total ?? 0;
-  if (amountReceived !== booking.amountCents) {
+  // Deliberately not auto-refunded. An unexplained shortfall is the one case
+  // where this server does not know what actually happened, and guessing with
+  // someone else's money is worse than stopping and saying so. The booking lapses
+  // with its hold on its own; the payment needs a human.
+  const amountReceived = Number(data.total_amount ?? 0);
+  if (!Number.isFinite(amountReceived) || amountReceived < booking.amountCents) {
     console.error(
-      `[webhook] amount mismatch on session ${session.id}: ` +
-        `Stripe reported ${amountReceived} but the booking is ${booking.amountCents}. ` +
-        `No pixels claimed. Review this payment in the Stripe dashboard and refund ` +
+      `[webhook] amount too low on payment ${paymentId} for booking ${bookingId}: ` +
+        `Dodo reported ${amountReceived} but the booking is ${booking.amountCents}. ` +
+        `No pixels claimed. Review this payment in the Dodo dashboard and refund ` +
         `it by hand if it should not stand.`
     );
     return;
   }
 
+  const currency =
+    typeof data.currency === 'string' && data.currency
+      ? data.currency.toLowerCase()
+      : booking.currency;
+  const buyerEmail =
+    (typeof data?.customer?.email === 'string' ? data.customer.email : null) ??
+    booking.buyerEmail ??
+    null;
+
   const result = await repo.markBookingPaid({
-    sessionId: session.id,
-    paymentIntentId,
-    amountCents: amountReceived,
-    currency: session.currency ?? booking.currency,
-    buyerEmail:
-      session.customer_details?.email ?? session.customer_email ?? booking.buyerEmail ?? null,
+    bookingId: booking.id,
+    paymentId,
+    // The order records what this server priced, not the tax-inclusive total, so
+    // it reflects the sale. Any overage is Dodo's tax, not our revenue.
+    amountCents: booking.amountCents,
+    currency,
+    buyerEmail,
   });
 
   switch (result.outcome) {
@@ -189,47 +212,52 @@ async function onPaymentSucceeded(session: Stripe.Checkout.Session): Promise<voi
         `[webhook] booking ${result.booking.id} lost a race for its pixels. Refunding.`
       );
 
-      if (paymentIntentId) {
+      if (paymentId) {
         try {
-          await refundPayment(paymentIntentId);
+          await refundPayment(paymentId);
           await repo.recordRefundedOrder({
             bookingId: result.booking.id,
-            sessionId: session.id,
-            paymentIntentId,
+            // Key the refund row off the same value the paid path would use.
+            sessionId: result.booking.stripeSessionId ?? paymentId,
+            paymentIntentId: paymentId,
             amountCents: amountReceived,
-            currency: session.currency ?? result.booking.currency,
+            currency,
             buyerEmail: result.booking.buyerEmail,
           });
-          console.log(`[webhook] refunded ${paymentIntentId} in full.`);
+          console.log(`[webhook] refunded ${paymentId} in full.`);
         } catch (refundErr: any) {
           // Loud, because a human now needs to refund this by hand.
           console.error(
-            `[webhook] REFUND FAILED for ${paymentIntentId}: ${refundErr.message}. ` +
-              `Refund this payment manually in the Stripe dashboard.`
+            `[webhook] REFUND FAILED for ${paymentId}: ${refundErr.message}. ` +
+              `Refund this payment manually in the Dodo dashboard.`
           );
         }
       } else {
         console.error(
-          `[webhook] booking ${result.booking.id} lost its pixels but the session ` +
-            `carried no payment intent. Refund session ${session.id} by hand.`
+          `[webhook] booking ${result.booking.id} lost its pixels but the event ` +
+            `carried no payment id. Refund booking ${bookingId} by hand.`
         );
       }
       break;
     }
 
     case 'not-found':
-      console.error(`[webhook] booking for session ${session.id} vanished.`);
+      console.error(`[webhook] booking ${bookingId} vanished.`);
       break;
   }
 }
 
-async function onCheckoutAbandoned(session: Stripe.Checkout.Session): Promise<void> {
-  const booking = await repo.getBookingBySessionId(session.id);
+async function onPaymentFailed(data: Record<string, any>): Promise<void> {
+  const bookingId = bookingIdFrom(data);
+  if (!bookingId) return;
+
+  const booking = await repo.getBookingById(bookingId);
   if (!booking) return;
 
-  // Never disturb a paid booking. Expiry events can arrive after payment.
+  // Never disturb a paid booking. A failure notice can arrive late, after another
+  // signal already confirmed the money.
   if (booking.status === 'paid') return;
 
   await repo.cancelBooking(booking.id);
-  console.log(`[webhook] released the hold on booking ${booking.id}.`);
+  console.log(`[webhook] released the hold on booking ${booking.id} after a failed payment.`);
 }

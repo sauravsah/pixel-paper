@@ -10,8 +10,9 @@
  * -------------------------------------
  * There is no `markPaid`, no `claim`, and no `setAvailable`. Those are not
  * missing by oversight — the server has no such endpoint. A booking becomes paid
- * only when Stripe's signed webhook says so, and an area is free only when a
- * locked database transaction says so. The most this file can do is *ask*.
+ * only when the payment provider's signed webhook says so, and an area is free
+ * only when a locked database transaction says so. The most this file can do is
+ * *ask*.
  *
  * Prices are likewise only ever read. `postQuote` and `postCheckout` send
  * coordinates; the amount comes back. Sending a price would be pointless because
@@ -104,7 +105,7 @@ export function postQuote(pageNumber: number, rect: Rect): Promise<QuoteResponse
 }
 
 /**
- * Start a purchase. Returns the Stripe Checkout URL to redirect to.
+ * Start a purchase. Returns the hosted checkout URL to redirect to.
  *
  * Note what is *not* in the request: no price. The server prices the rectangle
  * itself and creates the session for that amount.
@@ -131,12 +132,12 @@ export function postCheckout(payload: {
 /**
  * Ask whether the webhook has confirmed a payment yet.
  *
- * Polled after Stripe sends the buyer back. Reloading the page a hundred times
- * cannot turn a 'pending' into a 'paid'; this only reports what the database
- * already holds.
+ * Polled after the payment provider sends the buyer back. Reloading the page a
+ * hundred times cannot turn a 'pending' into a 'paid'; this only reports what the
+ * database already holds.
  */
-export function fetchCheckoutStatus(sessionId: string): Promise<CheckoutStatus> {
-  return request<CheckoutStatus>(`/checkout/status?session_id=${encodeURIComponent(sessionId)}`);
+export function fetchCheckoutStatus(bookingId: string): Promise<CheckoutStatus> {
+  return request<CheckoutStatus>(`/checkout/status?booking_id=${encodeURIComponent(bookingId)}`);
 }
 
 /** A single claimed space, for the shareable link. Paid bookings only. */

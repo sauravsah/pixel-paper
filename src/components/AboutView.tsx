@@ -42,7 +42,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
     [
       '03',
       'Pay once',
-      `From ${fmtRate(config.baseRate)} a pixel, on Stripe. There is no subscription, no renewal, and no invoice next month.`,
+      `From ${fmtRate(config.baseRate)} a pixel. There is no subscription, no renewal, and no invoice next month.`,
     ],
     [
       '04',

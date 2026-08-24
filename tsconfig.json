@@ -9,9 +9,9 @@
     "jsx": "react-jsx",
     "types": ["node"],
 
-    /* Required: server.ts and stripe.ts default-import CommonJS modules that
-       declare `export =` (express, cors, stripe). Without this they do not
-       type-check. */
+    /* Required: server.ts and dodo.ts default-import CommonJS modules that
+       declare `export =` (express, cors, dodopayments, dotenv). Without this
+       they do not type-check. */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
 

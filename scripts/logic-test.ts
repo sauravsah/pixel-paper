@@ -153,11 +153,11 @@ test('a big block spanning the whole page averages out to the middle of the rang
 });
 
 // --------------------------------------------------------------------------
-// Stripe's minimum charge
+// The card-network minimum charge
 // --------------------------------------------------------------------------
 
-test('minimum charge never falls below what Stripe will accept', () => {
-  assert.ok(CFG.minChargeCents >= 50, 'Stripe rejects card charges under 50c USD');
+test('minimum charge never falls below what card networks will accept', () => {
+  assert.ok(CFG.minChargeCents >= 50, 'card networks reject charges under 50c USD');
   const tiny = quoteAt(6, 0, CFG.pageHeight - CFG.minSelectionHeight, CFG.minSelectionWidth, CFG.minSelectionHeight);
   assert.equal(tiny.amountCents, CFG.minChargeCents);
   assert.equal(tiny.minimumApplied, true);

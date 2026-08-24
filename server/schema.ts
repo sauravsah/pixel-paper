@@ -12,9 +12,9 @@
  * ------------
  * No card numbers, CVCs, expiry dates or raw payment credentials are stored
  * anywhere in this schema, and none are ever received by this server. Card entry
- * happens entirely on Stripe's hosted Checkout page. All this database keeps are
- * Stripe's own opaque identifiers (session id, payment intent id), the amount,
- * and the buyer's email address.
+ * happens entirely on the payment provider's hosted checkout page. All this
+ * database keeps are the provider's own opaque identifiers (session id, payment
+ * id), the amount, and the buyer's email address.
  *
  * HOW DOUBLE-SELLING IS MADE IMPOSSIBLE
  * -------------------------------------
@@ -60,9 +60,9 @@ CREATE TABLE IF NOT EXISTS newspaper_pages (
 -- ---------------------------------------------------------------------------
 -- pixel_bookings — one row per attempted purchase of a rectangle.
 --
---   pending    a Checkout Session exists but Stripe has not confirmed payment.
---              Holds the pixels softly, for pendingHoldMinutes, then lapses.
---   paid       Stripe's signed webhook confirmed the payment. Permanent.
+--   pending    a checkout session exists but the provider has not confirmed
+--              payment. Holds the pixels softly, for pendingHoldMinutes, then lapses.
+--   paid       the provider's signed webhook confirmed the payment. Permanent.
 --   cancelled  abandoned or expired. Releases the pixels.
 --
 -- Only 'paid' rows are covered by the exclusion constraint, so only real,
@@ -81,8 +81,8 @@ CREATE TABLE IF NOT EXISTS pixel_bookings (
   price_per_pixel          NUMERIC(16, 10) NOT NULL CHECK (price_per_pixel >= 0),
   -- Total in dollars, for display and reporting.
   effective_price          NUMERIC(12, 2) NOT NULL CHECK (effective_price >= 0),
-  -- Total in whole cents. This is the figure that was sent to Stripe, and the
-  -- one the webhook checks the received amount against.
+  -- Total in whole cents. This is the figure that was sent to the payment
+  -- provider, and the one the webhook checks the received amount against.
   amount_cents             INTEGER NOT NULL CHECK (amount_cents > 0),
   currency                 TEXT NOT NULL DEFAULT 'usd',
 
@@ -149,8 +149,8 @@ CREATE INDEX IF NOT EXISTS pixel_bookings_session_idx
 -- advertisements — the creative for a booking.
 --
 -- Written at the same moment as the pending booking, so nothing the buyer typed
--- is lost when they are redirected to Stripe. UNIQUE on booking_id means a
--- replayed webhook physically cannot produce a second advertisement.
+-- is lost when they are redirected to the payment provider. UNIQUE on booking_id
+-- means a replayed webhook physically cannot produce a second advertisement.
 --
 -- An advertisement is only ever *rendered* through a join on
 -- pixel_bookings.status = 'paid'. An unpaid row is inert.
@@ -229,11 +229,11 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 COMMENT ON TABLE orders IS
-  'Stripe payment records. Stores Stripe identifiers and amounts only - never card numbers, CVCs or expiry dates.';
+  'Payment records. Stores payment-provider identifiers and amounts only - never card numbers, CVCs or expiry dates.';
 
 
 -- ---------------------------------------------------------------------------
--- webhook_events — every Stripe event id this server has already handled.
+-- webhook_events — every webhook event id this server has already handled.
 --
 -- The first line of idempotency. A replayed event fails to insert, and the
 -- handler returns 200 without touching anything.

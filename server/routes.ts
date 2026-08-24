@@ -9,7 +9,7 @@
  * It cannot set a price — prices are computed here from integer coordinates.
  * It cannot declare an area free — availability is checked here, under a lock.
  * It cannot declare a booking paid — only the webhook in webhook.ts does that,
- * and only after Stripe's signature has been verified.
+ * and only after Dodo's signature has been verified.
  */
 
 import express, { type Request, type Response, type Router } from 'express';
@@ -20,7 +20,7 @@ import { validateSelection } from '../shared/geometry.ts';
 import { env } from './env.ts';
 import { isDatabaseConfigured } from './db.ts';
 import * as repo from './repository.ts';
-import { createCheckoutSession, isStripeConfigured, isTestMode, isWebhookConfigured } from './stripe.ts';
+import { createCheckoutSession, isDodoConfigured, isTestMode, isWebhookConfigured } from './dodo.ts';
 import { validateAdSubmission } from './validation.ts';
 
 /** Booking ids are uuids. Anything else is a bad link, not a server fault. */
@@ -28,7 +28,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Work out the origin to send Stripe back to.
+ * Work out the origin to send the buyer back to after checkout.
  *
  * Prefers an explicit PUBLIC_BASE_URL, then the proxy headers a tunnel sets,
  * then the request's own Host. The Host header is attacker-controlled in
@@ -67,18 +67,17 @@ export function createApiRouter(): Router {
   /**
    * Everything the client needs to draw and price the newspaper.
    *
-   * The publishable key is included deliberately — it is designed to be public.
-   * The secret key and the webhook secret are not part of this response and have
-   * no route that can return them.
+   * No payment secret is part of this response, and no route can return one. The
+   * checkout flow is a redirect to Dodo's hosted page, so the browser never needs
+   * a payment key of any kind.
    */
   router.get('/config', (_req: Request, res: Response) => {
     res.json({
       pricing: PRICING_CONFIG,
       priceMap: buildPriceMap(PRICING_CONFIG),
-      stripePublishableKey: env.stripePublishableKey ?? null,
       readiness: {
         database: isDatabaseConfigured(),
-        stripe: isStripeConfigured(),
+        payments: isDodoConfigured(),
         webhook: isWebhookConfigured(),
         testMode: isTestMode(),
       },
@@ -89,7 +88,7 @@ export function createApiRouter(): Router {
     res.json({
       status: 'ok',
       database: isDatabaseConfigured(),
-      stripe: isStripeConfigured(),
+      payments: isDodoConfigured(),
       webhook: isWebhookConfigured(),
       time: new Date().toISOString(),
     });
@@ -186,7 +185,7 @@ export function createApiRouter(): Router {
    *   3. Price it here, from the validated integers.
    *   4. Create a PENDING booking, under the page lock, only if the pixels are
    *      genuinely free.
-   *   5. Create a Stripe Checkout Session for that server-computed amount.
+   *   5. Create a Dodo checkout session for that server-computed amount.
    *
    * Nothing is permanent at the end of this. The booking is pending and the
    * pixels are only softly held. Payment is confirmed by webhook, never here.
@@ -194,11 +193,11 @@ export function createApiRouter(): Router {
   router.post('/checkout', async (req: Request, res: Response) => {
     if (!requireDatabase(res)) return;
 
-    if (!isStripeConfigured()) {
+    if (!isDodoConfigured()) {
       res.status(503).json({
-        error: 'stripe-not-configured',
+        error: 'payments-not-configured',
         message:
-          'Payments are not enabled yet. STRIPE_SECRET_KEY is missing on the server.',
+          'Payments are not enabled yet. Dodo Payments is not configured on the server.',
       });
       return;
     }
@@ -274,13 +273,12 @@ export function createApiRouter(): Router {
 
       bookingId = created.booking.id;
 
-      const session = await createCheckoutSession(created.booking, ad, resolveBaseUrl(req));
+      const session = await createCheckoutSession(created.booking, resolveBaseUrl(req));
       await repo.attachCheckoutSession(created.booking.id, session.id);
 
       res.json({
         bookingId: created.booking.id,
         checkoutUrl: session.url,
-        sessionId: session.id,
         quote,
       });
     } catch (err: any) {
@@ -298,23 +296,31 @@ export function createApiRouter(): Router {
   });
 
   /**
-   * Has the webhook confirmed this session yet?
+   * Has the webhook confirmed this booking yet?
    *
-   * The client polls this after returning from Stripe. It reports the status the
-   * database holds; it never sets it. A buyer who reloads the success page a
-   * hundred times cannot make an unpaid booking look paid.
+   * The client polls this after returning from the payment provider. It reports
+   * the status the database holds; it never sets it. A buyer who reloads the
+   * success page a hundred times cannot make an unpaid booking look paid.
    */
   router.get('/checkout/status', async (req: Request, res: Response) => {
     if (!requireDatabase(res)) return;
 
-    const sessionId = typeof req.query.session_id === 'string' ? req.query.session_id : '';
-    if (!sessionId) {
-      res.status(400).json({ error: 'missing-session', message: 'No session id supplied.' });
+    const bookingId = typeof req.query.booking_id === 'string' ? req.query.booking_id : '';
+    if (!bookingId) {
+      res.status(400).json({ error: 'missing-booking', message: 'No booking id supplied.' });
+      return;
+    }
+
+    // A uuid column raises a type error on nonsense input, which would surface as
+    // a 500 for what is plainly a bad link. Treat a malformed id as "no such
+    // checkout" instead.
+    if (!UUID_PATTERN.test(bookingId)) {
+      res.status(404).json({ error: 'not-found', message: 'No such checkout.' });
       return;
     }
 
     try {
-      const booking = await repo.getBookingBySessionId(sessionId);
+      const booking = await repo.getBookingById(bookingId);
       if (!booking) {
         res.status(404).json({ error: 'not-found', message: 'No such checkout.' });
         return;

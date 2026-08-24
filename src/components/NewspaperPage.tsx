@@ -18,7 +18,7 @@
  * ---------------------------------------
  * It refuses to draw a selection over pixels somebody owns, and it shows a price
  * that moves with the cursor. Both are courtesies to the reader, not decisions:
- * the price shown here is recomputed by the server before any Stripe session
+ * the price shown here is recomputed by the server before any checkout session
  * exists, and availability is re-checked inside a locked transaction at that same
  * moment. If this component were wrong, or replaced wholesale by someone with a
  * developer console open, the worst outcome is a rejected checkout.
