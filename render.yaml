@@ -1,0 +1,36 @@
+# Render Blueprint — deploys The Internet Times as a single Node web service.
+# Spec: https://render.com/docs/blueprint-spec
+#
+# One service builds the client into dist/ and bundles the server into
+# dist/server.cjs, then runs that bundle. The same process serves both the API
+# and the built SPA — server.ts switches on NODE_ENV=production to serve dist/.
+#
+# The four secrets below are declared with `sync: false`: their VALUES are not
+# stored in this file or in git. Render prompts for them once in the dashboard
+# when the Blueprint is first applied, and remembers them thereafter.
+services:
+  - type: web
+    name: the-internet-times
+    runtime: node
+    plan: free
+    # --include=dev forces Vite/esbuild/tsx to install even though NODE_ENV is
+    # production. Without it npm skips devDependencies and the build dies with
+    # "vite: not found".
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    # Render restarts the service if this stops returning 200. /api/health also
+    # reports database + Stripe readiness, so a green check means fully wired.
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT is intentionally omitted — Render injects it and the server reads it.
+      # Values entered in the Render dashboard, never committed:
+      - key: DATABASE_URL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false

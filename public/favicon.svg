@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Pixel Paper">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c3aed" />
+      <stop offset="0.55" stop-color="#db2777" />
+      <stop offset="1" stop-color="#fb7185" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#tile)" />
+  <!-- Row 0 -->
+  <rect x="6" y="6" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="11.2" y="6" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="16.4" y="6" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <rect x="21.6" y="6" width="4" height="4" rx="1" fill="#22d3ee" />
+  <!-- Row 1 -->
+  <rect x="6" y="11.2" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <rect x="11.2" y="11.2" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="16.4" y="11.2" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="21.6" y="11.2" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <!-- Row 2 -->
+  <rect x="6" y="16.4" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <rect x="11.2" y="16.4" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <rect x="16.4" y="16.4" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="21.6" y="16.4" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <!-- Row 3 -->
+  <rect x="6" y="21.6" width="4" height="4" rx="1" fill="#fde047" />
+  <rect x="11.2" y="21.6" width="4" height="4" rx="1" fill="#ffffff" opacity="0.32" />
+  <rect x="16.4" y="21.6" width="4" height="4" rx="1" fill="#ffffff" />
+  <rect x="21.6" y="21.6" width="4" height="4" rx="1" fill="#ffffff" />
+</svg>

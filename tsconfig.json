@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "types": ["node"],
+
+    /* Required: server.ts and stripe.ts default-import CommonJS modules that
+       declare `export =` (express, cors, stripe). Without this they do not
+       type-check. */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Imports carry explicit .ts extensions so the same files can be run by
+       `node --experimental-strip-types` without a bundler. */
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "src",
+    "server",
+    "shared",
+    "scripts",
+    "server.ts",
+    "vite.config.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

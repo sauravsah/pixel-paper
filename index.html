@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>PIXEL PAPER — the internet's creative newspaper</title>
+    <meta
+      name="description"
+      content="A six-page newspaper made of pixels, where every pixel can become yours. Pick a space, add your link, pay once, and stay there permanently."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:title" content="PIXEL PAPER — the internet's creative newspaper" />
+    <meta
+      property="og:description"
+      content="Where every pixel can become yours. Pick a space, add your link, pay once, and stay here permanently."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#f2effb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0a14" media="(prefers-color-scheme: dark)" />
+
+    <!--
+      Dark mode, before first paint.
+
+      React cannot help here: by the time the bundle has parsed, the browser has
+      already painted, and a dark-mode reader would get a white flash of newsprint
+      on every load. This runs synchronously in <head> instead.
+
+      The storage key and the class name are the same ones ThemeContext.tsx uses.
+      Change one, change both.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('the_internet_times_theme');
+          var dark =
+            saved === 'dark' ||
+            ((saved === 'system' || saved === null) &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {
+          /* Private mode with storage disabled. Light mode is a fine default. */
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;0,6..72,800;1,6..72,400;1,6..72,600&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;0,900;1,400;1,600;1,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  </head>
+
+  <!--
+    No background, text or selection colour classes here. Tailwind utilities land
+    in a later cascade layer than the `@layer base` rules in index.css, so a
+    `bg-[#e8e4dc]` on <body> silently outranks `html.dark body` and dark mode
+    never takes hold. The base layer owns body colour, App.tsx owns the selection
+    highlight, and utilities own everything else.
+  -->
+  <body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

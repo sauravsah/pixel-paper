@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   PIXEL PAPER — design tokens
+   ---------------------------------------------------------------------------
+   The internet's creative newspaper. A controlled, vibrant palette: electric
+   violet through magenta to coral for the brand, with orange / amber / cyan /
+   blue as supporting accents. Colour is used to build hierarchy — the brand
+   mark, the primary call to action, the pricing tiers — not sprayed at the
+   whole surface. The paper itself stays a crisp, near-white sheet so the ads
+   people buy are what carries the colour.
+   --------------------------------------------------------------------------- */
+@theme {
+  --font-masthead: 'Playfair Display', 'Cinzel', Georgia, serif;
+  --font-headline: 'Playfair Display', Georgia, serif;
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  /* Brand + accent hues, exposed as Tailwind colours (bg-pp-violet, text-pp-cyan…) */
+  --color-pp-violet: #7c3aed;
+  --color-pp-violet-soft: #a78bfa;
+  --color-pp-magenta: #db2777;
+  --color-pp-coral: #fb7185;
+  --color-pp-orange: #f97316;
+  --color-pp-amber: #fbbf24;
+  --color-pp-cyan: #06b6d4;
+  --color-pp-blue: #2563eb;
+  --color-pp-ink: #191627;
+  --color-pp-paper: #fdfcff;
+}
+
+@layer base {
+  :root {
+    /* The signature gradient. Two forms: a CTA-safe one biased to the darker
+       violet→magenta end so white text always reads, and a fuller decorative
+       one carried all the way to coral for the wordmark and brand mark. */
+    --pp-gradient: linear-gradient(120deg, #7c3aed 0%, #9333ea 45%, #db2777 100%);
+    --pp-gradient-bright: linear-gradient(120deg, #8b5cf6 0%, #a855f7 45%, #ec4899 100%);
+    --pp-gradient-full: linear-gradient(120deg, #7c3aed 0%, #db2777 55%, #fb7185 100%);
+    --pp-gradient-full-bright: linear-gradient(120deg, #a78bfa 0%, #f472b6 55%, #fda4af 100%);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #f2effb;
+    color: #191627;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  html.dark body {
+    background-color: #0b0a14;
+    color: #f2f0fb;
+  }
+}
+
+.font-masthead {
+  font-family: var(--font-masthead);
+}
+
+.font-headline {
+  font-family: var(--font-headline);
+}
+
+.font-editorial {
+  font-family: var(--font-serif);
+}
+
+.font-ui {
+  font-family: var(--font-sans);
+}
+
+.font-data {
+  font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------------
+   The brand gradient, as text and as a fill
+   ---------------------------------------------------------------------------
+   `.pp-word` paints the wordmark; `.pp-fill` fills a shape (the pixel mark).
+   The dark-mode variants brighten so the gradient survives on a near-black
+   ground. `html.dark` rather than `dark:` because these are hand-written
+   classes Tailwind does not know how to make a variant for.
+   --------------------------------------------------------------------------- */
+.pp-word {
+  background-image: var(--pp-gradient-full);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+html.dark .pp-word {
+  background-image: var(--pp-gradient-full-bright);
+}
+
+.pp-fill {
+  background-image: var(--pp-gradient-full);
+}
+
+html.dark .pp-fill {
+  background-image: var(--pp-gradient-full-bright);
+}
+
+/* A soft coloured glow, used behind the brand mark and the hero paper. */
+.pp-glow {
+  box-shadow: 0 8px 30px -8px rgba(124, 58, 237, 0.45);
+}
+
+/* ---------------------------------------------------------------------------
+   Newsprint — a crisp, digital-native sheet
+   ---------------------------------------------------------------------------
+   Near-white with a whisper of a violet pixel grid, rather than the old warm
+   cream. The grid is two offset dot layers so it reads as texture, not lines.
+   One class with an `html.dark` override — `dark:` cannot target it.
+   --------------------------------------------------------------------------- */
+.newsprint {
+  background-color: #fdfcff;
+  background-image:
+    radial-gradient(rgba(124, 58, 237, 0.10) 0.5px, transparent 0.5px),
+    radial-gradient(rgba(219, 39, 119, 0.06) 0.5px, #fdfcff 0.5px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+html.dark .newsprint {
+  background-color: #16131f;
+  background-image:
+    radial-gradient(rgba(167, 139, 250, 0.14) 0.4px, transparent 0.4px),
+    radial-gradient(rgba(244, 114, 182, 0.08) 0.4px, #16131f 0.4px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Permanently claimed pixels
+   ---------------------------------------------------------------------------
+   Drawn over an area somebody owns, while the reader is dragging out a new one.
+   Diagonal hatching rather than a flat block, so a claimed area still reads as
+   part of the page.
+   --------------------------------------------------------------------------- */
+.claimed-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(25, 22, 39, 0.5) 0px,
+    rgba(25, 22, 39, 0.5) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+}
+
+html.dark .claimed-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.34) 0px,
+    rgba(255, 255, 255, 0.34) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+}
+
+/* A faint measuring grid, shown only while selecting, to make the page feel
+   like something with coordinates. Tinted violet to match the brand. */
+.pixel-grid {
+  background-image:
+    linear-gradient(to right, rgba(124, 58, 237, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(124, 58, 237, 0.10) 1px, transparent 1px);
+  background-size: 10% 10%;
+}
+
+html.dark .pixel-grid {
+  background-image:
+    linear-gradient(to right, rgba(167, 139, 250, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(167, 139, 250, 0.12) 1px, transparent 1px);
+}
+
+/* Modern double rules */
+.border-double-thick {
+  border-bottom: 3px double currentColor;
+}
+
+.border-double-thick-t {
+  border-top: 3px double currentColor;
+}
+
+.border-double-thick-y {
+  border-top: 3px double currentColor;
+  border-bottom: 3px double currentColor;
+}
+
+/* Broadsheet shadows — a touch of violet in the ambient layer so the paper
+   feels lit by the brand rather than floating on neutral grey. */
+.broadsheet-shadow {
+  box-shadow:
+    0 4px 6px -1px rgba(25, 22, 39, 0.08),
+    0 12px 28px -4px rgba(76, 29, 149, 0.16),
+    0 24px 50px -10px rgba(124, 58, 237, 0.22);
+}
+
+html.dark .broadsheet-shadow {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.4),
+    0 16px 36px -4px rgba(0, 0, 0, 0.6),
+    0 30px 60px -10px rgba(88, 28, 135, 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   The accent button — the signature gradient
+   ---------------------------------------------------------------------------
+   Every control that starts or completes a purchase wears the brand gradient.
+   One definition, both themes, hover included: the whole point of the class is
+   that no call site writes the colour out by hand and then forgets the hover
+   state. `html.dark` rather than `dark:` for the same reason as the newsprint.
+   --------------------------------------------------------------------------- */
+.accent-button {
+  background-image: var(--pp-gradient);
+  background-color: #7c3aed;
+  color: #ffffff;
+  box-shadow: 0 6px 18px -6px rgba(124, 58, 237, 0.6);
+}
+
+.accent-button:hover:not(:disabled) {
+  background-image: var(--pp-gradient-bright);
+  box-shadow: 0 8px 22px -6px rgba(219, 39, 119, 0.6);
+}
+
+html.dark .accent-button {
+  background-image: var(--pp-gradient-bright);
+  background-color: #8b5cf6;
+  color: #ffffff;
+  box-shadow: 0 6px 20px -6px rgba(139, 92, 246, 0.55);
+}
+
+html.dark .accent-button:hover:not(:disabled) {
+  background-image: var(--pp-gradient-full-bright);
+}
+
+/* Turn arrows animation styling */
+@keyframes pulse-subtle {
+  0%, 100% { transform: scale(1); opacity: 0.95; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
