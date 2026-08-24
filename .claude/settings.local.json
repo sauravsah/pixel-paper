@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm run *)",
-      "Bash(node --experimental-strip-types --test scripts/validation-test.ts)"
-    ]
-  }
-}
