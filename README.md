@@ -1,4 +1,4 @@
-# THE INTERNET TIMES
+# PIXEL PAPER
 
 A permanent newspaper made of pixels. Six pages, and every pixel on them is for
 sale exactly once. Choose any available rectangle, write what should go in it, pay
@@ -66,7 +66,7 @@ The one server both builds and serves the site; there is nothing else to stand u
    ```bash
    git init
    git add -A
-   git commit -m "The Internet Times"
+   git commit -m "Pixel Paper"
    git branch -M main
    git remote add origin https://github.com/YOU/YOUR-REPO.git
    git push -u origin main

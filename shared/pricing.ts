@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — PRICING ENGINE
+ * PIXEL PAPER — PRICING ENGINE
  * ===================================
  *
  * This module is imported by BOTH the Express server and the React client.

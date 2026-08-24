@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — DATABASE SCHEMA
+ * PIXEL PAPER — DATABASE SCHEMA
  * ===================================
  *
  * The schema lives here as a string rather than a .sql file so that esbuild

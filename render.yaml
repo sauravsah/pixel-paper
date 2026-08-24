@@ -1,4 +1,4 @@
-# Render Blueprint — deploys The Internet Times as a single Node web service.
+# Render Blueprint — deploys Pixel Paper as a single Node web service.
 # Spec: https://render.com/docs/blueprint-spec
 #
 # One service builds the client into dist/ and bundles the server into

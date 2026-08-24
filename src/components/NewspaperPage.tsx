@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — A PAGE OF THE NEWSPAPER
+ * PIXEL PAPER — A PAGE OF THE NEWSPAPER
  * ============================================
  *
  * One page: 1000 × 1400 logical pixels, drawn at whatever size the layout gives

@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — API CLIENT
+ * PIXEL PAPER — API CLIENT
  * ==============================
  *
  * The only place in the browser bundle that talks to the server. Everything the

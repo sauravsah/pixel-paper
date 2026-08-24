@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — DODO PAYMENTS WEBHOOK
+ * PIXEL PAPER — DODO PAYMENTS WEBHOOK
  * ==========================================
  *
  * The only place in this codebase where a booking becomes permanently claimed.

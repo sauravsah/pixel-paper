@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — GEOMETRY & SELECTION VALIDATION
+ * PIXEL PAPER — GEOMETRY & SELECTION VALIDATION
  * ===================================================
  *
  * Shared by the server and the client so both agree on exactly which pixels a

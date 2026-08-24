@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — ENVIRONMENT
+ * PIXEL PAPER — ENVIRONMENT
  * ================================
  *
  * Every secret this server needs is read here, once, and nowhere else.
@@ -94,8 +94,8 @@ export function printStartupBanner(): void {
   const report = readiness();
 
   console.log('');
-  console.log('  THE INTERNET TIMES');
-  console.log('  ------------------');
+  console.log('  PIXEL PAPER');
+  console.log('  -----------');
   console.log(`  Database   ${report.databaseReady ? 'connected' : 'NOT CONFIGURED'}`);
   console.log(
     `  Payments   ${report.paymentsReady ? `configured (Dodo ${env.dodoEnvironment === 'live_mode' ? 'live' : 'test'} mode)` : 'NOT CONFIGURED'}`

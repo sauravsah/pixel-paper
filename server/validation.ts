@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — INPUT VALIDATION
+ * PIXEL PAPER — INPUT VALIDATION
  * =====================================
  *
  * Everything a buyer types is validated here before it reaches the database or

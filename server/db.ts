@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — DATABASE CONNECTION
+ * PIXEL PAPER — DATABASE CONNECTION
  * ========================================
  *
  * Owns the connection pool, runs the migration, and seeds the six pages.

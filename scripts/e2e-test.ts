@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — END-TO-END ACCEPTANCE TEST
+ * PIXEL PAPER — END-TO-END ACCEPTANCE TEST
  * ===============================================
  *
  *     npm run dev          # in one terminal
@@ -167,7 +167,7 @@ async function postWebhook(payload: string, headers: Record<string, string>) {
 
 async function main(): Promise<void> {
   console.log('');
-  console.log('THE INTERNET TIMES — acceptance test');
+  console.log('PIXEL PAPER — acceptance test');
   console.log('===================================');
 
   // -------------------------------------------------------------------------

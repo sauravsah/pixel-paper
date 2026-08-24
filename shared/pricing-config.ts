@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — CENTRAL PRICING & CANVAS CONFIGURATION
+ * PIXEL PAPER — CENTRAL PRICING & CANVAS CONFIGURATION
  * ============================================================
  *
  * This is the ONE place where pricing and page geometry are defined.

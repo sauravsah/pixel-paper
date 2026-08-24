@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — DODO PAYMENTS
+ * PIXEL PAPER — DODO PAYMENTS
  * ==================================
  *
  * Every call to the payment provider goes through this file. Dodo Payments is the

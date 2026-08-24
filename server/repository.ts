@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — DATA ACCESS
+ * PIXEL PAPER — DATA ACCESS
  * ================================
  *
  * Every read and write against the booking tables goes through this file.

@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — SERVER ENTRY POINT
+ * PIXEL PAPER — SERVER ENTRY POINT
  * =======================================
  *
  * Wires the API, the Dodo webhook, and Vite (dev) or the built assets (prod).

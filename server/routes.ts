@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — HTTP API
+ * PIXEL PAPER — HTTP API
  * =============================
  *
  * Every route the browser can reach. The shape of this file follows one rule:

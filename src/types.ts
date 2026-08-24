@@ -1,5 +1,5 @@
 /**
- * THE INTERNET TIMES — CLIENT TYPES
+ * PIXEL PAPER — CLIENT TYPES
  * ================================
  *
  * The pricing and geometry types are *imported* from `shared/`, not copied. They
