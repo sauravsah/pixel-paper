@@ -181,9 +181,11 @@ export async function listOccupiedAreas(): Promise<OccupiedArea[]> {
 /**
  * Every live advertisement, for reading mode.
  *
- * Joins on status = 'paid', so an unpaid booking's creative is invisible no
- * matter what else happened. Prices are deliberately not selected — what someone
- * paid is nobody else's business.
+ * Joins on status = 'paid' AND moderation_status = 'approved', so an unpaid
+ * booking's creative is invisible no matter what else happened, and an ad taken
+ * down by moderation drops off the page without touching the payment record.
+ * Prices are deliberately not selected — what someone paid is nobody else's
+ * business.
  */
 export async function listPlacedAds(): Promise<PlacedAd[]> {
   const rows = await query<Record<string, any>>(
@@ -194,6 +196,7 @@ export async function listPlacedAds(): Promise<PlacedAd[]> {
        FROM pixel_bookings b
        JOIN advertisements a ON a.booking_id = b.id
       WHERE b.status = 'paid'
+        AND a.moderation_status = 'approved'
       ORDER BY b.page_number, b.y, b.x`
   );
 
@@ -321,6 +324,8 @@ export interface CreateBookingInput {
   pageMultiplier: number;
   positionMultiplier: number;
   buyerEmail: string | null;
+  /** The moderation decision made at submit time. A clean ad is 'approved'. */
+  moderationStatus: 'pending' | 'approved' | 'rejected';
   ad: AdContent;
 }
 
@@ -377,8 +382,8 @@ export async function createPendingBooking(
     // joins on status = 'paid'.
     await client.query(
       `INSERT INTO advertisements
-         (booking_id, brand_name, headline, description, destination_url, image_url, cta_text)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (booking_id, brand_name, headline, description, destination_url, image_url, cta_text, moderation_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         booking.id,
         input.ad.brandName,
@@ -387,6 +392,7 @@ export async function createPendingBooking(
         input.ad.destinationUrl,
         input.ad.imageUrl,
         input.ad.ctaText,
+        input.moderationStatus,
       ]
     );
 

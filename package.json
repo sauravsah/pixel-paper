@@ -14,7 +14,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
-    "test": "node --experimental-strip-types --test scripts/logic-test.ts scripts/validation-test.ts",
+    "test": "node --experimental-strip-types --test scripts/logic-test.ts scripts/validation-test.ts scripts/moderation-test.ts",
     "test:e2e": "tsx scripts/e2e-test.ts"
   },
   "dependencies": {

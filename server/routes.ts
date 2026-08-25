@@ -22,10 +22,26 @@ import { isDatabaseConfigured } from './db.ts';
 import * as repo from './repository.ts';
 import { createCheckoutSession, isDodoConfigured, isTestMode, isWebhookConfigured } from './dodo.ts';
 import { validateAdSubmission } from './validation.ts';
+import { moderateAdSubmission } from './moderation.ts';
+import { clientIp, createRateLimiter } from './rate-limit.ts';
 
 /** Booking ids are uuids. Anything else is a bad link, not a server fault. */
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Anti-spam for the one endpoint that creates bookings and calls the payment
+ * provider. A single client IP gets a generous ceiling — enough that a real buyer
+ * placing several spaces never trips it, low enough that a script hammering the
+ * endpoint does. Loopback is exempt: that is the app (or the acceptance test)
+ * talking to itself, the same self-trust the URL rules extend to localhost.
+ * One shared instance, since the router is created once at boot.
+ */
+const checkoutLimiter = createRateLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  exemptLoopback: true,
+});
 
 /**
  * Work out the origin to send the buyer back to after checkout.
@@ -202,6 +218,18 @@ export function createApiRouter(): Router {
       return;
     }
 
+    // Anti-spam before any work: a flood of submissions from one source is turned
+    // away here, before a booking is created or the payment provider is called.
+    const limit = checkoutLimiter.check(clientIp(req));
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfterSec));
+      res.status(429).json({
+        error: 'rate-limited',
+        message: 'Too many checkout attempts from here just now. Please wait a moment and try again.',
+      });
+      return;
+    }
+
     const body = (req.body ?? {}) as Record<string, unknown>;
 
     const geometry = validateSelection(
@@ -228,6 +256,20 @@ export function createApiRouter(): Router {
       return;
     }
 
+    // Shape is valid; now the publish-time policy. Is this ad safe to show and be
+    // clicked on a page strangers read — no private/blocked destination, no stored
+    // markup or script? Same `{error, message, fields}` shape as validation, so
+    // the form displays a rejection here exactly as it does a validation error.
+    const flags = moderateAdSubmission(adValidation.value);
+    if (flags.length > 0) {
+      res.status(400).json({
+        error: 'content-blocked',
+        message: flags[0].message,
+        fields: flags,
+      });
+      return;
+    }
+
     const pageNumber = Number(body.pageNumber);
     const rect = geometry.rect;
     const ad = adValidation.value;
@@ -249,6 +291,9 @@ export function createApiRouter(): Router {
         pageMultiplier: quote.pageMultiplier,
         positionMultiplier: quote.positionMultiplier,
         buyerEmail: ad.buyerEmail,
+        // Cleared both validation and moderation above, so it is approved and will
+        // go live the moment the webhook confirms payment.
+        moderationStatus: 'approved',
         ad: {
           brandName: ad.brandName,
           headline: ad.headline,

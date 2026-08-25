@@ -172,6 +172,17 @@ CREATE TABLE IF NOT EXISTS advertisements (
   destination_url TEXT NOT NULL,
   image_url       TEXT NOT NULL DEFAULT '',
   cta_text        TEXT NOT NULL DEFAULT '',
+
+  -- Publish gate, decided at submit time (before payment). A clean ad is stored
+  -- 'approved' and goes live when the booking is paid, exactly as before; an
+  -- unsafe one is refused before any booking exists, so a stored row is only ever
+  -- 'approved'. 'pending' and 'rejected' exist so a future manual review or
+  -- takedown needs no migration. The default is 'approved' on purpose: moderation
+  -- is enforced on the way IN, and a *paid* ad must never silently vanish because
+  -- a status was left unset.
+  moderation_status TEXT NOT NULL DEFAULT 'approved'
+                      CHECK (moderation_status IN ('pending', 'approved', 'rejected')),
+
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   -- Either an ordinary ad (brand + headline) or a logo-only ad (an image). An
@@ -205,6 +216,28 @@ BEGIN
         (length(btrim(brand_name)) > 0 AND length(btrim(headline)) > 0)
         OR length(btrim(image_url)) > 0
       );
+  END IF;
+END $$;
+
+
+-- Add the moderation gate to an advertisements table first built without it.
+-- Every step is idempotent. Existing rows are grandfathered to 'approved' — they
+-- were already live under the old rules — BEFORE the column is tightened to NOT
+-- NULL, so nothing currently on the page disappears and no back-filled NULL can
+-- fail the constraint. On a fresh database the column already exists from CREATE
+-- TABLE above, so each statement here is a no-op.
+DO $$
+BEGIN
+  ALTER TABLE advertisements ADD COLUMN IF NOT EXISTS moderation_status TEXT;
+  UPDATE advertisements SET moderation_status = 'approved' WHERE moderation_status IS NULL;
+  ALTER TABLE advertisements ALTER COLUMN moderation_status SET DEFAULT 'approved';
+  ALTER TABLE advertisements ALTER COLUMN moderation_status SET NOT NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'advertisements_moderation_status_check'
+  ) THEN
+    ALTER TABLE advertisements
+      ADD CONSTRAINT advertisements_moderation_status_check
+      CHECK (moderation_status IN ('pending', 'approved', 'rejected'));
   END IF;
 END $$;
 
