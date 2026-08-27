@@ -18,7 +18,7 @@ import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import { buildPriceMap, calculateQuote } from '../shared/pricing.ts';
 import { validateSelection } from '../shared/geometry.ts';
 import { env } from './env.ts';
-import { isDatabaseConfigured } from './db.ts';
+import { isDatabaseConfigured, pingDatabase } from './db.ts';
 import * as repo from './repository.ts';
 import { createCheckoutSession, isDodoConfigured, isTestMode, isWebhookConfigured } from './dodo.ts';
 import { validateAdSubmission } from './validation.ts';
@@ -101,11 +101,30 @@ export function createApiRouter(): Router {
   });
 
   router.get('/health', async (_req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      database: isDatabaseConfigured(),
-      payments: isDodoConfigured(),
-      webhook: isWebhookConfigured(),
+    let database = false;
+    let databaseError: string | undefined;
+
+    if (isDatabaseConfigured()) {
+      try {
+        await pingDatabase();
+        database = true;
+      } catch (err: any) {
+        databaseError = err?.message || 'Database is unreachable.';
+      }
+    } else {
+      databaseError = 'DATABASE_URL is missing.';
+    }
+
+    const payments = isDodoConfigured();
+    const webhook = isWebhookConfigured();
+    const ready = database && payments && webhook;
+
+    res.status(ready ? 200 : 503).json({
+      status: ready ? 'ok' : 'not-ready',
+      database,
+      payments,
+      webhook,
+      ...(databaseError ? { databaseError } : {}),
       time: new Date().toISOString(),
     });
   });

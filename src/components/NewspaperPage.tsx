@@ -32,12 +32,12 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Lock } from 'lucide-react';
 
 import { calculateQuote } from '../../shared/pricing.ts';
-import { clampAgainstOccupied } from '../../shared/geometry.ts';
+import { clampAgainstOccupied, inventoryRect, pointInRect } from '../../shared/geometry.ts';
 import type { PricingConfig } from '../../shared/pricing-config.ts';
 import type { Rect } from '../../shared/pricing.ts';
 import type { OccupiedArea, PixelSelection, PlacedAd, PriceMapCell } from '../types.ts';
 import {
-  clampRectToPage,
+  clampRectToInventory,
   displayUrl,
   firstBlocker,
   isBelowMinimum,
@@ -181,7 +181,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
   const candidateFor = useCallback(
     (drag: DragState, point: LogicalPoint): Rect | null => {
       if (drag.mode === 'create') {
-        const raw = rectFromDrag(drag.anchor, point);
+        const raw = clampRectToInventory(config, rectFromDrag(drag.anchor, point));
         const trimmed = clampAgainstOccupied(raw, occupied);
         return trimmed.width > 0 && trimmed.height > 0 ? trimmed : null;
       }
@@ -190,7 +190,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       let next: Rect;
 
       if (drag.mode === 'move') {
-        next = clampRectToPage(config, {
+        next = clampRectToInventory(config, {
           x: o.x + (point.x - drag.from.x),
           y: o.y + (point.y - drag.from.y),
           width: o.width,
@@ -208,7 +208,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
         if (drag.mode.includes('n')) top = Math.min(point.y, bottom);
         if (drag.mode.includes('s')) bottom = Math.max(point.y, top);
 
-        next = clampRectToPage(config, {
+        next = clampRectToInventory(config, {
           x: left,
           y: top,
           width: right - left + 1,
@@ -244,6 +244,11 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       if (!point) return;
 
       if (mode === 'create') {
+        if (!pointInRect(inventoryRect(config), point.x, point.y)) {
+          setRefusedAt(Date.now());
+          return;
+        }
+
         // Starting on top of somebody's pixels is refused outright.
         if (occupiedAt(occupied, point)) {
           setRefusedAt(Date.now());
@@ -268,7 +273,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       event.preventDefault();
       event.stopPropagation();
     },
-    [activeSelection, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
+    [activeSelection, config, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
   );
 
   const handlePointerMove = useCallback(
@@ -285,7 +290,10 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
       if (!drag) {
         // Not dragging: the cursor's job is to say whether this pixel is for sale.
-        if (isSelectMode) setHoverBlocked(occupiedAt(occupied, point) !== null);
+        if (isSelectMode) {
+          const inInventory = pointInRect(inventoryRect(config), point.x, point.y);
+          setHoverBlocked(!inInventory || occupiedAt(occupied, point) !== null);
+        }
         return;
       }
 
@@ -294,7 +302,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
       event.preventDefault();
     },
-    [candidateFor, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
+    [candidateFor, config, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
   );
 
   const endDrag = useCallback(
@@ -415,7 +423,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
             </header>
           ) : (
             <header className="flex items-baseline justify-between border-b border-[#191627]/30 pb-[1%] font-data text-[0.62vw] font-bold uppercase tracking-[0.25em] text-[#191627]/60 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/50 sm:text-[9px]">
-              <span>Pixel Paper</span>
+              <span>Pixel Press</span>
               <span>Page {pageNumber}</span>
             </header>
           )}
@@ -486,6 +494,8 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
             key={ad.bookingId}
             ad={ad}
             style={box(ad)}
+            pageWidth={config.pageWidth}
+            pageHeight={config.pageHeight}
             interactive={!isSelectMode}
             onOpen={() => onAdClick(ad)}
           />
@@ -717,24 +727,30 @@ const SelectionReadout: React.FC<{
 const AdBlock: React.FC<{
   ad: PlacedAd;
   style: React.CSSProperties;
+  pageWidth: number;
+  pageHeight: number;
   interactive: boolean;
   onOpen: () => void;
-}> = ({ ad, style, interactive, onOpen }) => {
+}> = ({ ad, style, pageWidth, pageHeight, interactive, onOpen }) => {
   const area = ad.width * ad.height;
+  const widthRatio = ad.width / pageWidth;
+  const heightRatio = ad.height / pageHeight;
+  const areaRatio = area / (pageWidth * pageHeight);
 
   // A logo-only ad was stored with an image and no headline. It renders as just
   // the linked image filling the whole space that was bought — `object-cover`, so
   // the logo covers every purchased pixel edge to edge with no empty border, and
   // the buyer is not charged for margin they did not want. When the image's shape
   // differs from the box the overflow is cropped (never letterboxed or stretched),
-  // which is why the box has `overflow-hidden`. It deliberately skips the 260×200
-  // gate below that keeps decorative images out of tiny ordinary ads.
+  // which is why the box has `overflow-hidden`. Ordinary images use the same
+  // proportions as the original page thresholds, scaled to the configured logical
+  // page rather than assuming a particular inventory resolution.
   const logoOnly = Boolean(ad.imageUrl) && ad.headline.length === 0;
 
-  const showImage = Boolean(ad.imageUrl) && ad.width >= 260 && ad.height >= 200;
-  const showDescription = Boolean(ad.description) && area >= 90_000 && ad.height >= 160;
-  const showCta = Boolean(ad.ctaText) && ad.height >= 110 && ad.width >= 200;
-  const showHeadline = ad.height >= 70 && ad.width >= 110;
+  const showImage = Boolean(ad.imageUrl) && widthRatio >= 0.26 && heightRatio >= 0.143;
+  const showDescription = Boolean(ad.description) && areaRatio >= 0.045 && heightRatio >= 0.114;
+  const showCta = Boolean(ad.ctaText) && heightRatio >= 0.079 && widthRatio >= 0.2;
+  const showHeadline = heightRatio >= 0.05 && widthRatio >= 0.11;
 
   // One accessible name for both the link title and the image alt. An ordinary ad
   // reads "Brand — Headline"; a logo-only ad falls back to the brand, or to the
@@ -790,7 +806,7 @@ const AdBlock: React.FC<{
             </span>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-[1.5cqw] px-[4cqw] py-[2.5cqw]">
+          <div className="flex min-h-0 flex-1 flex-col gap-[1.5cqw] overflow-hidden px-[4cqw] py-[2.5cqw]">
             {showImage && (
               <div className="min-h-0 flex-1 overflow-hidden bg-black/5 dark:bg-black/30">
                 <img

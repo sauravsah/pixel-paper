@@ -1,16 +1,73 @@
 /**
- * Create the schema and seed the six pages.
+ * Create the schema and seed the configured pages.
  *
  *     npm run migrate
  *
- * Safe to run as many times as you like. The server also runs this on boot, so
- * you normally never need to call it by hand — it exists for when you want to
- * confirm the database is reachable and correctly set up before starting
- * anything else.
+ * Safe to run as many times as you like. Run this explicit command before
+ * starting the server or deploying a schema change; server startup only checks
+ * database connectivity.
  */
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import { closePool, isDatabaseConfigured, migrate, pingDatabase, query } from '../server/db.ts';
+
+function redactDiagnosticText(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+
+  return String(value)
+    .replace(/postgres(?:ql)?:\/\/[^\s'\"]+/gi, '[redacted connection string]')
+    .replace(/([?&](?:password|passwd|pwd|token|secret|key)=)[^&\s]*/gi, '$1[redacted]')
+    .replace(/((?:password|passwd|pwd|token|secret|key)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]');
+}
+
+function describeDiagnosticError(error: unknown, seen = new Set<object>()): unknown {
+  if (!error || typeof error !== 'object') {
+    return { message: redactDiagnosticText(error) };
+  }
+
+  if (seen.has(error)) return { message: '[circular error reference]' };
+  seen.add(error);
+
+  const details = error as {
+    name?: unknown;
+    code?: unknown;
+    message?: unknown;
+    syscall?: unknown;
+    errno?: unknown;
+    hostname?: unknown;
+    address?: unknown;
+    port?: unknown;
+    path?: unknown;
+    errors?: unknown;
+    cause?: unknown;
+  };
+
+  const diagnostic: Record<string, unknown> = {
+    name: redactDiagnosticText(details.name ?? (error as Error).name),
+    constructor: redactDiagnosticText(
+      (error as { constructor?: { name?: unknown } }).constructor?.name
+    ),
+    code: redactDiagnosticText(details.code),
+    message: redactDiagnosticText(details.message ?? (error as Error).message),
+  };
+
+  for (const field of ['syscall', 'errno', 'hostname', 'address', 'port', 'path'] as const) {
+    const value = details[field];
+    if (value !== undefined) diagnostic[field] = redactDiagnosticText(value);
+  }
+
+  if (Array.isArray(details.errors)) {
+    diagnostic.errors = details.errors.map((nestedError) =>
+      describeDiagnosticError(nestedError, seen)
+    );
+  }
+
+  if (details.cause !== undefined) {
+    diagnostic.cause = describeDiagnosticError(details.cause, seen);
+  }
+
+  return diagnostic;
+}
 
 async function main(): Promise<void> {
   if (!isDatabaseConfigured()) {
@@ -81,8 +138,10 @@ async function main(): Promise<void> {
 main()
   .catch((err) => {
     console.error('');
-    console.error('Migration failed:', err.message);
-    if (err.message.includes('btree_gist')) {
+    console.error('Migration failed:');
+    console.error(JSON.stringify(describeDiagnosticError(err), null, 2));
+    const errorMessage = err instanceof Error ? err.message : String(err ?? '');
+    if (errorMessage.includes('btree_gist')) {
       console.error('');
       console.error('The btree_gist extension could not be created. On Supabase this is');
       console.error('available by default; on a self-hosted Postgres you may need the');

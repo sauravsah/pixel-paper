@@ -1,373 +1,376 @@
 /**
- * Pure-logic test suite for the pricing engine and geometry rules.
+ * Pure-logic tests for Pixel Press pricing and inventory geometry.
  *
- * Runs with no dependencies installed:
- *
- *     node --experimental-strip-types --test scripts/logic-test.ts
- *
- * These are the parts of the system where a subtle mistake silently charges the
- * wrong amount or sells the same pixels twice, so they are tested directly.
+ * Pixel Units are logical newspaper inventory units. They do not change with
+ * viewport size, and V1 pricing ignores exact visual position.
  */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { PRICING_CONFIG as CFG } from '../shared/pricing-config.ts';
 import {
-  calculateQuote,
-  positionMultiplierAtPoint,
   averagePositionMultiplier,
   buildPriceMap,
-  tierForMultiplier,
+  calculateQuote,
   positionLabel,
+  positionMultiplierAtPoint,
+  tierForMultiplier,
 } from '../shared/pricing.ts';
 import {
+  clampAgainstOccupied,
+  inventoryRect,
+  pointInRect,
+  rectInInventory,
   rectsOverlap,
   validateSelection,
-  clampAgainstOccupied,
-  pointInRect,
 } from '../shared/geometry.ts';
 
-const BOX = { width: 200, height: 200 };
-const quoteAt = (page: number, x: number, y: number, w = BOX.width, h = BOX.height) =>
+const quoteAt = (page: number, x: number, y: number, w = 20, h = 20) =>
   calculateQuote(CFG, page, { x, y, width: w, height: h });
 
-// --------------------------------------------------------------------------
-// Position field: top > bottom, right > left, centre elevated
-// --------------------------------------------------------------------------
+const inventoryQuoteAt = (page: number, x: number, y: number, w: number, h: number) =>
+  calculateQuote(CFG, page, { x, y, width: w, height: h });
 
-test('top of a page is worth more than the bottom', () => {
-  const top = positionMultiplierAtPoint(CFG, 0.5, 0.02);
-  const bottom = positionMultiplierAtPoint(CFG, 0.5, 0.98);
-  assert.ok(top > bottom, `top ${top} should exceed bottom ${bottom}`);
+test('initial newspaper structure exposes front page plus four spreads', () => {
+  assert.equal(CFG.totalPages, 9);
+  assert.deepEqual(CFG.pageMultipliers, {
+    1: 5,
+    2: 2.5,
+    3: 2.5,
+    4: 1.75,
+    5: 1.75,
+    6: 1.25,
+    7: 1.25,
+    8: 1,
+    9: 1,
+  });
 });
 
-test('right side is worth more than the left at the same height', () => {
-  for (const v of [0.05, 0.25, 0.5, 0.75, 0.95]) {
-    const left = positionMultiplierAtPoint(CFG, 0.02, v);
-    const right = positionMultiplierAtPoint(CFG, 0.98, v);
-    assert.ok(right > left, `at v=${v}: right ${right} should exceed left ${left}`);
-  }
+test('base rate is one cent per logical Pixel Unit', () => {
+  assert.equal(CFG.baseRate, 0.01);
 });
 
-test('attention hot spot is the peak of the field', () => {
-  const focus = positionMultiplierAtPoint(CFG, CFG.position.focusX, CFG.position.focusY);
-  const offCentre = positionMultiplierAtPoint(CFG, CFG.position.focusX, 0.7);
-  assert.ok(focus > offCentre);
+test('same rectangle costs the same anywhere on the same page', () => {
+  const topLeft = quoteAt(2, 0, 0, 20, 20);
+  const bottomRight = quoteAt(2, 80, 120, 20, 20);
+  assert.equal(topLeft.amountCents, bottomRight.amountCents);
+  assert.equal(topLeft.positionMultiplier, 1);
+  assert.equal(bottomRight.positionMultiplier, 1);
 });
 
-test('field stays inside its configured floor and ceiling', () => {
-  for (let i = 0; i <= 40; i++) {
-    for (let j = 0; j <= 40; j++) {
-      const m = positionMultiplierAtPoint(CFG, i / 40, j / 40);
-      assert.ok(m >= CFG.position.min && m <= CFG.position.max, `out of range: ${m}`);
-    }
-  }
+test('page and spread multipliers determine V1 price', () => {
+  const front = quoteAt(1, 10, 10, 20, 20);
+  const highLeft = quoteAt(2, 10, 10, 20, 20);
+  const highRight = quoteAt(3, 10, 10, 20, 20);
+  const base = quoteAt(9, 10, 10, 20, 20);
+
+  assert.ok(front.amountCents > highLeft.amountCents);
+  assert.equal(highLeft.amountCents, highRight.amountCents);
+  assert.ok(highRight.amountCents > base.amountCents);
 });
 
-test('field is continuous - a one pixel nudge never jumps the price', () => {
-  let worst = 0;
-  for (let px = 0; px < CFG.pageWidth - 1; px += 7) {
-    for (let py = 0; py < CFG.pageHeight - 1; py += 11) {
-      const a = positionMultiplierAtPoint(CFG, px / CFG.pageWidth, py / CFG.pageHeight);
-      const b = positionMultiplierAtPoint(CFG, (px + 1) / CFG.pageWidth, (py + 1) / CFG.pageHeight);
-      worst = Math.max(worst, Math.abs(a - b));
-    }
-  }
-  assert.ok(worst < 0.005, `largest single-pixel step was ${worst}`);
-});
+test('effective rate is base x page multiplier x neutral position multiplier', () => {
+  const q = quoteAt(4, 30, 20, 25, 12);
+  const expectedRate = Math.round(CFG.baseRate * CFG.pageMultipliers[4] * 1e10) / 1e10;
 
-// --------------------------------------------------------------------------
-// Page multipliers follow the specified order
-// --------------------------------------------------------------------------
-
-test('page multipliers descend from page 1 to page 6 exactly as configured', () => {
-  assert.deepEqual(CFG.pageMultipliers, { 1: 1.5, 2: 1.25, 3: 1.15, 4: 1.1, 5: 1.0, 6: 0.9 });
-});
-
-test('the same rectangle costs strictly less on each later page', () => {
-  const prices = [1, 2, 3, 4, 5, 6].map((p) => quoteAt(p, 400, 300).amountCents);
-  for (let i = 1; i < prices.length; i++) {
-    assert.ok(prices[i] < prices[i - 1], `page ${i + 1} (${prices[i]}) should undercut page ${i} (${prices[i - 1]})`);
-  }
-});
-
-// --------------------------------------------------------------------------
-// Quote arithmetic
-// --------------------------------------------------------------------------
-
-test('effective rate is base x page x position, and total is rate x pixels', () => {
-  const q = quoteAt(2, 300, 200, 286, 240);
-  const expectedRate =
-    Math.round(CFG.baseRate * q.pageMultiplier * q.positionMultiplier * 1e10) / 1e10;
-
-  assert.equal(q.pixelCount, 286 * 240);
+  assert.equal(q.pixelCount, 25 * 12);
+  assert.equal(q.positionMultiplier, 1);
   assert.equal(q.effectiveRate, expectedRate);
-  assert.equal(q.amountCents, Math.round(q.pixelCount * q.effectiveRate * 100));
-  assert.equal(q.totalPrice, q.amountCents / 100);
+  assert.equal(q.amountCents, Math.max(CFG.minChargeCents, Math.round(q.pixelCount * q.effectiveRate * 100)));
 });
 
-test('amount is always a whole number of cents', () => {
-  for (const [x, y, w, h] of [[0, 0, 40, 40], [137, 419, 283, 161], [500, 700, 500, 700], [0, 0, 1000, 1400]]) {
-    const q = quoteAt(3, x, y, w, h);
-    assert.ok(Number.isInteger(q.amountCents), `${q.amountCents} is not an integer`);
+test('amounts are always whole cents and total price is derived from them', () => {
+  const quotes = [
+    inventoryQuoteAt(1, 0, CFG.inventoryTop, 2, 2),
+    inventoryQuoteAt(4, 10, CFG.inventoryTop + 1, 7, 11),
+    inventoryQuoteAt(9, 30, CFG.inventoryBottom - 20, 20, 20),
+    inventoryQuoteAt(2, 0, CFG.inventoryTop, CFG.pageWidth, CFG.inventoryBottom - CFG.inventoryTop),
+  ];
+
+  for (const quote of quotes) {
+    assert.equal(Number.isInteger(quote.amountCents), true);
+    assert.equal(quote.totalPrice, quote.amountCents / 100);
   }
 });
 
-test('price rises with area when position is held constant', () => {
-  const small = quoteAt(4, 100, 100, 100, 100).amountCents;
-  const large = quoteAt(4, 100, 100, 400, 400).amountCents;
-  assert.ok(large > small);
-});
+test('repeating the same quote calculation is deterministic', () => {
+  const expected = inventoryQuoteAt(4, 23, CFG.inventoryTop + 9, 17, 13);
 
-test('identical input produces identical output every time', () => {
-  const a = quoteAt(1, 233, 421, 287, 163);
-  for (let i = 0; i < 50; i++) {
-    assert.deepEqual(quoteAt(1, 233, 421, 287, 163), a);
+  for (let attempt = 0; attempt < 25; attempt++) {
+    assert.deepEqual(inventoryQuoteAt(4, 23, CFG.inventoryTop + 9, 17, 13), expected);
   }
 });
 
-test('a right-hand block outprices the same block mirrored to the left', () => {
-  const left = quoteAt(3, 40, 400, 300, 200).amountCents;
-  const right = quoteAt(3, CFG.pageWidth - 340, 400, 300, 200).amountCents;
-  assert.ok(right > left, `right ${right} should exceed left ${left}`);
+test('price increases with area within one page tier', () => {
+  const smaller = inventoryQuoteAt(8, 10, CFG.inventoryTop + 2, 10, 10);
+  const larger = inventoryQuoteAt(8, 10, CFG.inventoryTop + 2, 20, 20);
+
+  assert.equal(smaller.pageMultiplier, larger.pageMultiplier);
+  assert.ok(larger.pixelCount > smaller.pixelCount);
+  assert.ok(larger.amountCents > smaller.amountCents);
 });
 
-test('a top block outprices the same block moved to the bottom', () => {
-  const top = quoteAt(3, 350, 30, 300, 200).amountCents;
-  const bottom = quoteAt(3, 350, CFG.pageHeight - 230, 300, 200).amountCents;
-  assert.ok(top > bottom, `top ${top} should exceed bottom ${bottom}`);
+test('maximum charge clamps a quote when a test configuration ceiling is exceeded', () => {
+  const cappedConfig = { ...CFG, maxChargeCents: 1_234 };
+  const quote = calculateQuote(cappedConfig, 1, {
+    x: 0,
+    y: CFG.inventoryTop,
+    width: CFG.pageWidth,
+    height: 100,
+  });
+
+  assert.ok(quote.pixelCount * quote.effectiveRate * 100 > cappedConfig.maxChargeCents);
+  assert.equal(quote.amountCents, cappedConfig.maxChargeCents);
+  assert.equal(quote.minimumApplied, false);
+  assert.equal(quote.totalPrice, 12.34);
 });
 
-test('averaging is symmetric about the vertical axis of the field', () => {
-  // Mirroring a rectangle horizontally must mirror the horizontal weighting.
-  const a = averagePositionMultiplier(CFG, { x: 0, y: 500, width: 200, height: 200 });
-  const b = averagePositionMultiplier(CFG, { x: 800, y: 500, width: 200, height: 200 });
-  const mid = averagePositionMultiplier(CFG, { x: 400, y: 500, width: 200, height: 200 });
-  assert.ok(a < mid && mid < b);
-});
-
-test('a big block spanning the whole page averages out to the middle of the range', () => {
-  const full = averagePositionMultiplier(CFG, { x: 0, y: 0, width: CFG.pageWidth, height: CFG.pageHeight });
-  assert.ok(full > 0.9 && full < 1.25, `full page average was ${full}`);
-});
-
-// --------------------------------------------------------------------------
-// The card-network minimum charge
-// --------------------------------------------------------------------------
-
-test('minimum charge never falls below what card networks will accept', () => {
-  assert.ok(CFG.minChargeCents >= 50, 'card networks reject charges under 50c USD');
-  const tiny = quoteAt(6, 0, CFG.pageHeight - CFG.minSelectionHeight, CFG.minSelectionWidth, CFG.minSelectionHeight);
+test('minimum charge and maximum charge are enforced', () => {
+  const tiny = quoteAt(9, 0, 0, CFG.minSelectionWidth, CFG.minSelectionHeight);
   assert.equal(tiny.amountCents, CFG.minChargeCents);
   assert.equal(tiny.minimumApplied, true);
-});
 
-test('a normal sized block is priced on its own merits, not the floor', () => {
-  const q = quoteAt(1, 300, 200, 400, 300);
-  assert.equal(q.minimumApplied, false);
-  assert.ok(q.amountCents > CFG.minChargeCents);
-});
-
-test('no selection can exceed the configured ceiling', () => {
   const whole = quoteAt(1, 0, 0, CFG.pageWidth, CFG.pageHeight);
   assert.ok(whole.amountCents <= CFG.maxChargeCents);
 });
 
-// --------------------------------------------------------------------------
-// Labels and tiers
-// --------------------------------------------------------------------------
-
-test('position labels describe the rectangle in plain language', () => {
-  assert.equal(positionLabel(CFG, { x: 800, y: 20, width: 150, height: 100 }), 'Top Right');
-  assert.equal(positionLabel(CFG, { x: 20, y: 1250, width: 150, height: 100 }), 'Bottom Left');
-  assert.equal(positionLabel(CFG, { x: 430, y: 660, width: 140, height: 100 }), 'Middle Centre');
+test('position helpers are neutral compatibility shims in V1', () => {
+  assert.equal(positionMultiplierAtPoint(CFG, 0, 0), 1);
+  assert.equal(positionMultiplierAtPoint(CFG, 1, 1), 1);
+  assert.equal(averagePositionMultiplier(CFG, { x: 0, y: 0, width: 20, height: 20 }), 1);
+  assert.equal(positionLabel(CFG, { x: 80, y: 120, width: 20, height: 20 }), 'Page tier');
 });
 
-test('tiers are ordered and the price map covers every tier', () => {
-  assert.equal(tierForMultiplier(CFG, 1.5), 'premium');
-  assert.equal(tierForMultiplier(CFG, 1.2), 'high');
-  assert.equal(tierForMultiplier(CFG, 1.0), 'medium');
-  assert.equal(tierForMultiplier(CFG, 0.8), 'standard');
-
-  const tiers = new Set(buildPriceMap(CFG).map((c) => c.tier));
-  for (const expected of ['premium', 'high', 'medium', 'standard']) {
-    assert.ok(tiers.has(expected as never), `price map never produces "${expected}"`);
-  }
+test('tiers are ordered by page multiplier', () => {
+  assert.equal(tierForMultiplier(CFG, 5), 'premium');
+  assert.equal(tierForMultiplier(CFG, 2.5), 'high');
+  assert.equal(tierForMultiplier(CFG, 1.25), 'medium');
+  assert.equal(tierForMultiplier(CFG, 1), 'standard');
 });
 
-test('price map cells tile the page exactly once', () => {
+test('price map remains a neutral overlay and tiles the page exactly once', () => {
   const cells = buildPriceMap(CFG, 12, 18);
   assert.equal(cells.length, 12 * 18);
-  const area = cells.reduce((sum, c) => sum + c.w * c.h, 0);
-  assert.ok(Math.abs(area - 1) < 1e-9, `cells cover ${area} of the page`);
+  assert.equal(new Set(cells.map((cell) => cell.multiplier)).size, 1);
+  const area = cells.reduce((sum, cell) => sum + cell.w * cell.h, 0);
+  assert.ok(Math.abs(area - 1) < 1e-9);
 });
 
-// --------------------------------------------------------------------------
-// Overlap detection - the rule that stops pixels being sold twice
-// --------------------------------------------------------------------------
-
 test('overlapping rectangles are detected', () => {
-  const a = { x: 100, y: 100, width: 100, height: 100 };
-  assert.ok(rectsOverlap(a, { x: 150, y: 150, width: 100, height: 100 }), 'corner overlap');
-  assert.ok(rectsOverlap(a, { x: 120, y: 120, width: 10, height: 10 }), 'fully contained');
-  assert.ok(rectsOverlap(a, { x: 0, y: 0, width: 500, height: 500 }), 'fully containing');
-  assert.ok(rectsOverlap(a, { x: 199, y: 199, width: 50, height: 50 }), 'single pixel overlap');
+  const a = { x: 10, y: 10, width: 10, height: 10 };
+  assert.ok(rectsOverlap(a, { x: 15, y: 15, width: 5, height: 5 }));
+  assert.ok(rectsOverlap(a, { x: 19, y: 19, width: 4, height: 4 }));
 });
 
 test('rectangles that only touch edges do not overlap', () => {
-  const a = { x: 0, y: 0, width: 100, height: 100 };
-  assert.equal(rectsOverlap(a, { x: 100, y: 0, width: 100, height: 100 }), false, 'flush right');
-  assert.equal(rectsOverlap(a, { x: 0, y: 100, width: 100, height: 100 }), false, 'flush below');
-  assert.equal(rectsOverlap(a, { x: 100, y: 100, width: 100, height: 100 }), false, 'diagonal corner');
+  const a = { x: 0, y: 0, width: 10, height: 10 };
+  assert.equal(rectsOverlap(a, { x: 10, y: 0, width: 10, height: 10 }), false);
+  assert.equal(rectsOverlap(a, { x: 0, y: 10, width: 10, height: 10 }), false);
 });
 
-test('overlap test is symmetric', () => {
+test('overlap detection is symmetric', () => {
   const pairs = [
     [{ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 }],
     [{ x: 0, y: 0, width: 10, height: 10 }, { x: 10, y: 10, width: 10, height: 10 }],
-    [{ x: 3, y: 90, width: 40, height: 4 }, { x: 0, y: 0, width: 1000, height: 1400 }],
-  ];
+    [{ x: 3, y: 9, width: 40, height: 4 }, { x: 0, y: 0, width: 100, height: 140 }],
+  ] as const;
+
   for (const [a, b] of pairs) {
     assert.equal(rectsOverlap(a, b), rectsOverlap(b, a));
   }
 });
 
+test('contained rectangles overlap in either direction', () => {
+  const outer = { x: 10, y: 10, width: 40, height: 40 };
+  const inner = { x: 20, y: 20, width: 5, height: 5 };
+
+  assert.equal(rectsOverlap(outer, inner), true);
+  assert.equal(rectsOverlap(inner, outer), true);
+});
+
+test('diagonal corner touch does not overlap, but a one-pixel corner does', () => {
+  const a = { x: 0, y: 0, width: 10, height: 10 };
+
+  assert.equal(rectsOverlap(a, { x: 10, y: 10, width: 10, height: 10 }), false);
+  assert.equal(rectsOverlap(a, { x: 9, y: 9, width: 1, height: 1 }), true);
+});
+
 test('point containment uses the same half-open rule', () => {
   const r = { x: 10, y: 10, width: 10, height: 10 };
-  assert.ok(pointInRect(r, 10, 10), 'first owned pixel');
-  assert.ok(pointInRect(r, 19, 19), 'last owned pixel');
-  assert.equal(pointInRect(r, 20, 19), false, 'one past the right edge');
-  assert.equal(pointInRect(r, 9, 10), false, 'one before the left edge');
+  assert.ok(pointInRect(r, 10, 10));
+  assert.ok(pointInRect(r, 19, 19));
+  assert.equal(pointInRect(r, 20, 19), false);
 });
 
-// --------------------------------------------------------------------------
-// Server-side input validation
-// --------------------------------------------------------------------------
-
-test('a well formed selection validates', () => {
-  const r = validateSelection(CFG, 2, 100, 200, 300, 400);
+test('a well formed inventory selection validates', () => {
+  const r = validateSelection(CFG, 2, 10, CFG.inventoryTop, 30, 40);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.rect, { x: 100, y: 200, width: 300, height: 400 });
+  assert.deepEqual(r.rect, { x: 10, y: CFG.inventoryTop, width: 30, height: 40 });
 });
 
-test('bad pages are rejected', () => {
-  for (const page of [0, 7, -1, 1.5, 'two', null, undefined, NaN, Infinity, true, false, [], {}, '']) {
-    assert.equal(validateSelection(CFG, page, 0, 0, 100, 100).ok, false, `page ${String(page)}`);
+test('bad pages are rejected and pages 1..9 are accepted', () => {
+  for (const page of [0, 10, -1, 1.5, 'two', null, undefined, NaN, Infinity, true, false, [], {}, '']) {
+    assert.equal(validateSelection(CFG, page, 0, CFG.inventoryTop, 10, 10).ok, false, `page ${String(page)}`);
   }
-});
-
-test('every page 1..6 is accepted', () => {
   for (let page = 1; page <= CFG.totalPages; page++) {
-    assert.equal(validateSelection(CFG, page, 0, 0, 100, 100).ok, true, `page ${page}`);
-  }
-});
-
-test('coordinates that are not real whole numbers are rejected', () => {
-  // Number() would coerce null, '', [] and false to 0 and true to 1, which
-  // would price a rectangle the buyer never selected. None may slip through.
-  const bad = [1.5, '10.2', NaN, Infinity, -Infinity, null, undefined, 'abc', {}, [], true, false, '', '  ', '1e3', '0x10'];
-  for (const value of bad) {
-    assert.equal(validateSelection(CFG, 1, value, 0, 100, 100).ok, false, `x = ${JSON.stringify(value) ?? String(value)}`);
-    assert.equal(validateSelection(CFG, 1, 0, value, 100, 100).ok, false, `y = ${JSON.stringify(value) ?? String(value)}`);
-    assert.equal(validateSelection(CFG, 1, 0, 0, value, 100).ok, false, `w = ${JSON.stringify(value) ?? String(value)}`);
-    assert.equal(validateSelection(CFG, 1, 0, 0, 100, value).ok, false, `h = ${JSON.stringify(value) ?? String(value)}`);
+    assert.equal(validateSelection(CFG, page, 0, CFG.inventoryTop, 10, 10).ok, true, `page ${page}`);
   }
 });
 
 test('numeric strings from a form post are accepted', () => {
-  const r = validateSelection(CFG, '3', '100', '200', '300', '400');
+  const r = validateSelection(CFG, '3', '10', String(CFG.inventoryTop), '30', '40');
   assert.equal(r.ok, true);
-  assert.deepEqual(r.rect, { x: 100, y: 200, width: 300, height: 400 });
+  assert.deepEqual(r.rect, { x: 10, y: CFG.inventoryTop, width: 30, height: 40 });
 });
 
-test('selections outside the page are rejected', () => {
-  assert.equal(validateSelection(CFG, 1, -1, 0, 100, 100).error, 'out-of-bounds');
-  assert.equal(validateSelection(CFG, 1, 0, -1, 100, 100).error, 'out-of-bounds');
-  assert.equal(validateSelection(CFG, 1, 950, 0, 100, 100).error, 'out-of-bounds');
-  assert.equal(validateSelection(CFG, 1, 0, 1350, 100, 100).error, 'out-of-bounds');
-  assert.equal(validateSelection(CFG, 1, 0, 0, 1001, 100).error, 'out-of-bounds');
+test('coordinates outside the logical page are rejected', () => {
+  assert.equal(validateSelection(CFG, 1, -1, 0, 10, 10).error, 'out-of-bounds');
+  assert.equal(validateSelection(CFG, 1, 0, -1, 10, 10).error, 'out-of-bounds');
+  assert.equal(validateSelection(CFG, 1, 99, 0, 10, 10).error, 'out-of-bounds');
+  assert.equal(validateSelection(CFG, 1, 0, 139, 10, 10).error, 'out-of-bounds');
+});
+
+test('non-integer and coercible coordinate values are rejected', () => {
+  const invalid = [
+    1.5,
+    '10.2',
+    NaN,
+    Infinity,
+    -Infinity,
+    null,
+    undefined,
+    'abc',
+    {},
+    [],
+    true,
+    false,
+    '',
+    '  ',
+    '1e3',
+    '0x10',
+  ];
+
+  for (const value of invalid) {
+    assert.equal(
+      validateSelection(CFG, 1, value, CFG.inventoryTop, 10, 10).error,
+      'non-integer',
+      `x = ${JSON.stringify(value) ?? String(value)}`
+    );
+    assert.equal(
+      validateSelection(CFG, 1, 0, value, 10, 10).error,
+      'non-integer',
+      `y = ${JSON.stringify(value) ?? String(value)}`
+    );
+    assert.equal(
+      validateSelection(CFG, 1, 0, CFG.inventoryTop, value, 10).error,
+      'non-integer',
+      `width = ${JSON.stringify(value) ?? String(value)}`
+    );
+    assert.equal(
+      validateSelection(CFG, 1, 0, CFG.inventoryTop, 10, value).error,
+      'non-integer',
+      `height = ${JSON.stringify(value) ?? String(value)}`
+    );
+  }
+});
+
+test('a rectangle that crosses the right page edge is rejected', () => {
+  assert.equal(
+    validateSelection(CFG, 1, CFG.pageWidth - 1, CFG.inventoryTop, 2, 2).error,
+    'out-of-bounds'
+  );
+});
+
+test('a rectangle that crosses the bottom inventory edge is rejected', () => {
+  assert.equal(
+    validateSelection(CFG, 1, 0, CFG.inventoryBottom - 1, 2, 2).error,
+    'outside-inventory'
+  );
 });
 
 test('selections smaller than the minimum are rejected', () => {
-  assert.equal(validateSelection(CFG, 1, 0, 0, 10, 10).error, 'too-small');
-  assert.equal(validateSelection(CFG, 1, 0, 0, CFG.minSelectionWidth, 1).error, 'too-small');
-  assert.equal(validateSelection(CFG, 1, 0, 0, 0, 0).error, 'too-small');
-  assert.equal(validateSelection(CFG, 1, 0, 0, -50, -50).error, 'too-small');
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryTop, 1, 2).error, 'too-small');
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryTop, 2, 1).error, 'too-small');
 });
 
-test('a selection filling the entire page is legal', () => {
-  assert.equal(validateSelection(CFG, 6, 0, 0, CFG.pageWidth, CFG.pageHeight).ok, true);
+test('inventory boundaries are inclusive at the top and exclusive at the bottom', () => {
+  const inventory = inventoryRect(CFG);
+  assert.equal(rectInInventory(CFG, { x: 0, y: CFG.inventoryTop, width: CFG.pageWidth, height: inventory.height }), true);
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryTop, 10, 10).ok, true);
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryBottom - 10, 10, 10).ok, true);
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryTop - 1, 10, 2).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryBottom - 1, 10, 2).error, 'outside-inventory');
 });
 
-// --------------------------------------------------------------------------
-// Drag clamping (a convenience for the cursor, never a security control)
-// --------------------------------------------------------------------------
+test('a selection cannot cross from inventory into header or footer', () => {
+  assert.equal(validateSelection(CFG, 1, 10, CFG.inventoryTop - 1, 10, 4).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 1, 10, CFG.inventoryBottom - 2, 10, 4).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 9, 0, CFG.inventoryTop, CFG.pageWidth, CFG.inventoryBottom - CFG.inventoryTop).ok, true);
+});
 
 test('a dragged rectangle is pulled back out of occupied pixels', () => {
-  const occupied = [{ x: 200, y: 200, width: 200, height: 200 }];
-  const result = clampAgainstOccupied({ x: 100, y: 100, width: 300, height: 300 }, occupied);
-  assert.equal(rectsOverlap(result, occupied[0]), false, 'clamped result still overlaps');
+  const occupied = [{ x: 20, y: 20, width: 20, height: 20 }];
+  const result = clampAgainstOccupied({ x: 10, y: 10, width: 30, height: 30 }, occupied);
+  assert.equal(rectsOverlap(result, occupied[0]), false);
   assert.ok(result.width > 0 && result.height > 0);
 });
 
 test('clamping leaves a clear rectangle untouched', () => {
-  const proposed = { x: 600, y: 900, width: 200, height: 200 };
-  assert.deepEqual(clampAgainstOccupied(proposed, [{ x: 0, y: 0, width: 100, height: 100 }]), proposed);
+  const proposed = { x: 60, y: 90, width: 20, height: 20 };
+  assert.deepEqual(clampAgainstOccupied(proposed, [{ x: 0, y: 0, width: 10, height: 10 }]), proposed);
 });
 
-test('clamping against many blocks never leaves an overlap', () => {
+test('clamping against multiple blockers leaves no remaining overlap', () => {
   const occupied = [
-    { x: 0, y: 0, width: 300, height: 150 },
-    { x: 400, y: 100, width: 250, height: 250 },
-    { x: 700, y: 0, width: 300, height: 400 },
-    { x: 100, y: 600, width: 500, height: 300 },
+    { x: 0, y: CFG.inventoryTop, width: 18, height: 12 },
+    { x: 28, y: CFG.inventoryTop + 6, width: 22, height: 18 },
+    { x: 60, y: CFG.inventoryTop + 20, width: 25, height: 22 },
+  ];
+
+  const proposals = [
+    { x: 8, y: CFG.inventoryTop + 4, width: 30, height: 22 },
+    { x: 20, y: CFG.inventoryTop + 8, width: 48, height: 28 },
+    { x: 50, y: CFG.inventoryTop + 16, width: 35, height: 30 },
   ];
 
   let checked = 0;
-  for (let x = 0; x <= 800; x += 50) {
-    for (let y = 0; y <= 1200; y += 50) {
-      const out = clampAgainstOccupied({ x, y, width: 200, height: 200 }, occupied);
-      if (out.width <= 0 || out.height <= 0) continue;
-      for (const taken of occupied) {
-        assert.equal(rectsOverlap(out, taken), false, `overlap left at ${x},${y}`);
-      }
-      checked++;
+  for (const proposal of proposals) {
+    const result = clampAgainstOccupied(proposal, occupied);
+    if (result.width <= 0 || result.height <= 0) continue;
+    checked++;
+
+    for (const blocker of occupied) {
+      assert.equal(rectsOverlap(result, blocker), false);
     }
   }
-  assert.ok(checked > 50, `only ${checked} cases exercised`);
+  assert.ok(checked > 0, 'all multiple-blocker cases collapsed to an empty rectangle');
 });
 
-// --------------------------------------------------------------------------
-// Worked example from the specification
-// --------------------------------------------------------------------------
-
-test('worked example: 286 x 240 on page 2 prices in a sensible range', () => {
-  const q = quoteAt(2, 640, 180, 286, 240);
-  assert.equal(q.pixelCount, 68_640);
-  assert.equal(q.pageMultiplier, 1.25);
-  assert.equal(q.positionLabel, 'Upper Right');
-  assert.equal(q.tier, 'premium');
-  assert.ok(q.totalPrice > 5 && q.totalPrice < 20, `unexpected total $${q.totalPrice}`);
-  console.log(
-    `      -> ${q.width}x${q.height}px, ${q.pixelCount.toLocaleString()} px, ` +
-      `page x${q.pageMultiplier}, position x${q.positionMultiplier} (${q.positionLabel}, ${q.tier}), ` +
-      `rate $${q.effectiveRate.toFixed(8)}/px, total $${q.totalPrice.toFixed(2)}`
+test('runtime buildViews creates a cover followed by two-page spreads', () => {
+  const source = readFileSync(new URL('../src/components/Broadsheet.tsx', import.meta.url), 'utf8');
+  const match = source.match(
+    /function buildViews\(totalPages: number\): PageSlots\[\] \{([\s\S]*?)\n\}/
   );
-});
+  assert.ok(match, 'Broadsheet buildViews implementation was not found');
 
-test('report the corner-to-corner spread for a 300x200 block on page 1', () => {
-  const spots: Array<[string, number, number]> = [
-    ['top left    ', 0, 0],
-    ['top right   ', 700, 0],
-    ['centre      ', 350, 400],
-    ['bottom left ', 0, 1200],
-    ['bottom right', 700, 1200],
-  ];
-  const prices = spots.map(([label, x, y]) => {
-    const q = quoteAt(1, x, y, 300, 200);
-    console.log(`      -> ${label}  x${q.positionMultiplier.toFixed(4)}  $${q.totalPrice.toFixed(2)}  ${q.tier}`);
-    return q.totalPrice;
-  });
-  assert.ok(Math.max(...prices) > Math.min(...prices) * 1.4, 'position should move the price meaningfully');
+  const buildViewsBody = match[1].replace(/: PageSlots\[\]/g, '');
+  const buildViews = new Function(`return function buildViews(totalPages) {${buildViewsBody}}`)() as (
+    totalPages: number
+  ) => Array<{ left: number | null; right: number | null }>;
+
+  assert.deepEqual(buildViews(1), [{ left: null, right: 1 }]);
+  assert.deepEqual(buildViews(2), [
+    { left: null, right: 1 },
+    { left: 2, right: null },
+  ]);
+  assert.deepEqual(buildViews(9), [
+    { left: null, right: 1 },
+    { left: 2, right: 3 },
+    { left: 4, right: 5 },
+    { left: 6, right: 7 },
+    { left: 8, right: 9 },
+  ]);
+  assert.deepEqual(buildViews(10).at(-1), { left: 10, right: null });
 });

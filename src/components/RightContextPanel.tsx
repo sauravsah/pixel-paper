@@ -74,8 +74,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
             <span className="text-[9px] opacity-80">{showPriceMap ? 'On' : 'Off'}</span>
           </button>
           <p className="px-1 font-editorial text-[10px] leading-snug text-[#6f6a80] dark:text-zinc-500">
-            Tints the page by how much each area costs — brightest where attention,
-            and the price, runs highest.
+            Shows inventory selection over the logical page grid. V1 price is page tier plus unit count.
           </p>
         </div>
 
@@ -100,15 +99,12 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
             <dl className="space-y-1.5 font-data text-[11px]">
               {(
                 [
-                  ['Dimensions', `${selection.width} × ${selection.height} px`],
-                  ['Total pixels', fmtPixels(selection.quote.pixelCount)],
+                  ['Dimensions', `${selection.width} × ${selection.height} units`],
+                  ['Pixel Units', fmtPixels(selection.quote.pixelCount)],
                   ['Position', `(${selection.x}, ${selection.y})`],
-                  ['Base rate', `${fmtRate(selection.quote.baseRate)} / px`],
+                  ['Base rate', `${fmtRate(selection.quote.baseRate)} / unit`],
                   ['Page', `${selection.pageNumber} — ×${selection.quote.pageMultiplier.toFixed(2)}`],
-                  [
-                    selection.quote.positionLabel,
-                    `×${selection.quote.positionMultiplier.toFixed(2)}`,
-                  ],
+                  ['Position pricing', 'Not used in V1'],
                 ] as [string, string][]
               ).map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-2">
@@ -122,14 +118,14 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
               <div className="flex justify-between gap-2 border-t border-[#e0dcf0] pt-1.5 dark:border-[#2a2740]">
                 <dt className="font-bold text-[#2563eb] dark:text-[#60a5fa]">Effective rate</dt>
                 <dd className="font-bold text-[#2563eb] dark:text-[#60a5fa]">
-                  {fmtRate(selection.quote.effectiveRate)} / px
+                  {fmtRate(selection.quote.effectiveRate)} / unit
                 </dd>
               </div>
             </dl>
 
             {tooSmall ? (
               <div className="rounded-xs bg-[#fef3c7] p-2.5 text-center font-data text-[11px] font-bold text-[#92400e] dark:bg-[#78350f]/50 dark:text-[#fcd34d]">
-                Drag out at least {config.minSelectionWidth} × {config.minSelectionHeight} px.
+                Drag out at least {config.minSelectionWidth} × {config.minSelectionHeight} units.
               </div>
             ) : (
               <>
@@ -157,10 +153,10 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
           <section className="rounded-xs border border-dashed border-[#dcd6ec] bg-white p-4 text-center dark:border-[#2a2740] dark:bg-[#131120]">
             <MousePointerClick className="mx-auto mb-2 h-6 w-6 text-[#6f6a80] dark:text-zinc-500" />
             <h2 className="font-headline text-base font-black uppercase tracking-tight text-[#191627] dark:text-white">
-              Buy a piece of Pixel Paper
+              Claim a piece of Pixel Press
             </h2>
             <p className="mt-1 font-editorial text-xs leading-snug text-[#514c62] dark:text-[#a49eb6]">
-              Choose any available space. Add your link. Pay once. Stay here permanently.
+              Choose available newspaper space. Add your identity. Become part of the paper.
             </p>
 
             {!isSelectMode && (
@@ -175,7 +171,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
 
             {isSelectMode && (
               <p className="mt-3 rounded-xs bg-[#f0edfa] p-2 font-data text-[10px] text-[#514c62] dark:bg-[#171526] dark:text-zinc-400">
-                Drag anywhere on the page to draw your space.
+                Drag anywhere on the page to draw your logical Pixel Unit space.
                 {/* A page pixel is a fraction of a millimetre wide on a phone,
                     so say outright that zooming is available — and that while a
                     drag means "draw", the arrows are what change the page. */}
@@ -197,10 +193,10 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
           </h2>
           <ol className="space-y-2">
             {[
-              'Drag out any rectangle on any page, at any size.',
-              'Write your headline and add the link it should go to.',
-              'Pay once. There is no subscription and no renewal.',
-              'Your pixels are yours, and your ad stays on the page.',
+              'Choose a page or spread and draw a rectangular space.',
+              'Add your logo, brand name, category and website.',
+              'Review the server-calculated price and continue to payment.',
+              'After verified payment and moderation, your placement appears.',
             ].map((text, index) => (
               <li key={index} className="flex gap-2">
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#191627] font-data text-[9px] font-black text-white dark:bg-[#f2f0fb] dark:text-[#191627]">
@@ -224,9 +220,8 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
           </h2>
 
           <p className="font-editorial text-[11px] leading-snug text-[#514c62] dark:text-[#a49eb6]">
-            Every pixel starts at {fmtRate(config.baseRate)}. Where it sits is the only thing
-            that changes that — which page, and where on the page. What you advertise makes no
-            difference at all.
+            Every Pixel Unit starts at {fmtRate(config.baseRate)}. Page or spread tier is the only
+            multiplier in V1. What you advertise makes no difference at all.
           </p>
 
           <div>
@@ -249,13 +244,13 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
           </div>
 
           <p className="font-editorial text-[10px] leading-snug text-[#6f6a80] dark:text-zinc-500">
-            Position matters too — turn on the price map above to see how the rate
-            rises and falls across each page.
+            Exact visual position does not change price in V1; availability still depends on
+            whether the selected logical rectangle overlaps held or sold inventory.
           </p>
         </section>
 
         <footer className="border-t border-[#e0dcf0] pt-3 text-center font-data text-[9px] uppercase tracking-[0.2em] text-[#6f6a80] dark:border-[#2a2740] dark:text-zinc-600">
-          {config.totalPages} pages · {fmtPixels(stats.totalPixels)} px ·{' '}
+          {config.totalPages} pages · {fmtPixels(stats.totalPixels)} units ·{' '}
           {fmtPixels(stats.claimedPixels)} claimed
         </footer>
       </div>

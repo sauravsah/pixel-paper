@@ -1,15 +1,13 @@
 /**
- * THE BROADSHEET — FOUR VIEWS, THREE TURNS
+ * THE BROADSHEET — FRONT PAGE PLUS SPREADS
  * ========================================
  *
- * The paper has six permanent pages, read the way a folded newspaper is actually
- * read:
+ * The paper starts with a front page, then two-page spreads:
  *
- *     view 0        view 1        view 2        view 3
- *     ┌────┐        ┌────┬────┐   ┌────┬────┐   ┌────┐
- *     │ 1  │   →    │ 2  │ 3  │ → │ 4  │ 5  │ → │ 6  │
- *     └────┘        └────┴────┘   └────┴────┘   └────┘
- *      cover          inside        inside        back
+ *   view 0: page 1
+ *   view 1: pages 2-3
+ *   view 2: pages 4-5
+ *   ...
  *
  * HOW THE TURN WORKS
  * ------------------
@@ -38,23 +36,29 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 
-import type { PricingConfig } from '../../shared/pricing-config.ts';
+import { PRICING_CONFIG, type PricingConfig } from '../../shared/pricing-config.ts';
 import type { OccupiedArea, PixelSelection, PlacedAd, PriceMapCell } from '../types.ts';
 import { NewspaperPage } from './NewspaperPage.tsx';
 
-/** Which physical page sits in which slot, for each of the four views. */
-const VIEWS: { left: number | null; right: number | null }[] = [
-  { left: null, right: 1 },
-  { left: 2, right: 3 },
-  { left: 4, right: 5 },
-  { left: 6, right: null },
-];
+interface PageSlots {
+  left: number | null;
+  right: number | null;
+}
 
-export const VIEW_COUNT = VIEWS.length;
+function buildViews(totalPages: number): PageSlots[] {
+  const views: PageSlots[] = [{ left: null, right: 1 }];
+  for (let page = 2; page <= totalPages; page += 2) {
+    views.push({ left: page, right: page + 1 <= totalPages ? page + 1 : null });
+  }
+  return views;
+}
+
+const DEFAULT_VIEWS = buildViews(PRICING_CONFIG.totalPages);
+export const VIEW_COUNT = DEFAULT_VIEWS.length;
 
 /** How far to slide the stage so a lone page appears centred. */
-function stageOffset(view: number): string {
-  const slots = VIEWS[view];
+function stageOffset(view: number, views = DEFAULT_VIEWS): string {
+  const slots = views[view];
   if (!slots) return '0%';
   // A lone page sits in one slot of the two-wide stage; slide the stage by a
   // quarter of its width *toward* the empty slot so the page lands on centre.
@@ -66,7 +70,7 @@ function stageOffset(view: number): string {
 
 /** A short human label for the view, used by the navigation chrome. */
 export function viewLabel(view: number): string {
-  const slots = VIEWS[view];
+  const slots = DEFAULT_VIEWS[view];
   if (!slots) return '';
   if (slots.left === null) return `Page ${slots.right}`;
   if (slots.right === null) return `Page ${slots.left}`;
@@ -74,7 +78,7 @@ export function viewLabel(view: number): string {
 }
 
 export function pagesInView(view: number): number[] {
-  const slots = VIEWS[view];
+  const slots = DEFAULT_VIEWS[view];
   if (!slots) return [];
   return [slots.left, slots.right].filter((p): p is number => p !== null);
 }
@@ -88,7 +92,7 @@ export function pagesInView(view: number): number[] {
  * URL should land somewhere sensible.
  */
 export function viewForPage(pageNumber: number): number {
-  const index = VIEWS.findIndex(
+  const index = DEFAULT_VIEWS.findIndex(
     (slots) => slots.left === pageNumber || slots.right === pageNumber
   );
   return index === -1 ? 0 : index;
@@ -145,9 +149,11 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
   const [flip, setFlip] = useState<Flip | null>(null);
   const flipping = flip !== null;
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const views = buildViews(config.totalPages);
+  const viewCount = views.length;
 
   const canBack = view > 0;
-  const canForward = view < VIEW_COUNT - 1;
+  const canForward = view < viewCount - 1;
 
   const turn = useCallback(
     (direction: 'forward' | 'backward') => {
@@ -156,10 +162,10 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
       if (flipping) return;
 
       const to = direction === 'forward' ? view + 1 : view - 1;
-      if (to < 0 || to >= VIEW_COUNT) return;
+      if (to < 0 || to >= viewCount) return;
 
-      const current = VIEWS[view];
-      const target = VIEWS[to];
+      const current = views[view];
+      const target = views[to];
       if (!current || !target) return;
 
       const front = direction === 'forward' ? current.right : current.left;
@@ -169,7 +175,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
       setFlip({ direction, front, back, to });
       onViewChange(to);
     },
-    [flipping, onViewChange, view]
+    [flipping, onViewChange, view, viewCount, views]
   );
 
   // ---- Keyboard ----------------------------------------------------------
@@ -230,7 +236,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
 
   /** The spread mounted under the leaf: the destination once a turn begins. */
   const settledView = flip ? flip.to : view;
-  const slots = VIEWS[settledView] ?? VIEWS[0]!;
+  const slots = views[settledView] ?? views[0]!;
 
   // The stage holds two page-shaped slots side by side, so its ratio is the page
   // ratio doubled. Everything inside is a percentage of this box.
@@ -280,7 +286,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
       >
         {/* The slide that keeps a lone page centred. */}
         <motion.div
-          animate={{ x: stageOffset(settledView) }}
+          animate={{ x: stageOffset(settledView, views) }}
           transition={{ duration: TURN_DURATION, ease: TURN_EASE }}
           className="relative w-full"
           style={{ aspectRatio: stageAspect, perspective: '2400px' }}
@@ -417,7 +423,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
         </button>
 
         <div className="flex items-center gap-2" role="tablist" aria-label="Newspaper pages">
-          {VIEWS.map((_, index) => (
+          {views.map((_, index) => (
             <button
               key={index}
               type="button"

@@ -18,7 +18,7 @@
  * like a real booking of that size and position would. The images are inline
  * SVGs — they render with no network request and belong to no one.
  *
- * Coordinates are logical newspaper pixels on a 1000 × 1400 page, the same space
+ * Coordinates are logical newspaper pixels on the configured page, the same space
  * everything else in the app speaks. The rectangles sit below the cover's
  * masthead and are laid out so that no two ads overlap.
  */
@@ -57,37 +57,41 @@ interface DemoSpec {
   description: string;
   ctaText: string;
   slug: string;
-  /** [gradient start, gradient end, single-letter glyph] for the hero image. */
-  image: [string, string, string];
+  /**
+   * [gradient start, gradient end, single-letter glyph] for the hero image.
+   * Omitted for an ad that carries no image — it then renders as text only.
+   */
+  image?: [string, string, string];
 }
 
 /**
  * The demo cast, all on the cover. Sizes are chosen to exercise every rung of
  * `AdBlock`'s layout ladder — a wide hero with image, description and call to
  * action; a small logo-only mark that carries no text at all; two medium cards;
- * and a slim banner too short for an image — so the preview shows the whole range
- * of what a real page can hold, the logo-only shape included. Everything sits
- * below the masthead (which occupies roughly the top third of the cover).
+ * and several compact listings — so the preview shows the whole range of what a
+ * real page can hold, including logo-only marks and detailed listings. Every box is
+ * sized generously enough that its text fits without spilling into the footer,
+ * and the copy is kept short for the same reason. Everything sits below the
+ * masthead (which occupies roughly the top third of the cover) and no two ads
+ * overlap.
  */
 const SPECS: DemoSpec[] = [
   // ---- Wide hero, just under the masthead ----
   {
-    x: 100, y: 420, width: 620, height: 300,
+    x: 4, y: 36, width: 52, height: 32,
     brandName: 'Northwind Coffee',
     headline: 'Roasted the morning it ships',
     description:
-      'Single-origin beans, roasted to order and at your door within 48 hours. No warehouse, no staleness — just coffee that tastes like the day it was made.',
+      'Food & drink. Single-origin beans, roasted to order and at your door within 48 hours.',
     ctaText: 'Shop beans',
     slug: 'northwind',
     image: ['#f59e0b', '#b45309', 'N'],
   },
-  // ---- Small logo-only mark, top-right beside the hero ----
+  // ---- Small logo-only marks, top-right beside the hero ----
   // No headline, description or button: on the page this renders as just the
-  // linked logo, and at 150 × 150 it is well under the 260 × 200 an ordinary ad
-  // needs before it shows an image — so it also exercises the logo-only bypass of
-  // that size gate. A blank headline is what marks an ad "logo-only" everywhere.
+  // linked logo. A blank headline is what marks an ad "logo-only" everywhere.
   {
-    x: 750, y: 420, width: 150, height: 150,
+    x: 61, y: 36, width: 35, height: 18,
     brandName: 'Pixel Labs',
     headline: '',
     description: '',
@@ -95,37 +99,61 @@ const SPECS: DemoSpec[] = [
     slug: 'pixel-labs',
     image: ['#2563eb', '#7c3aed', 'P'],
   },
-  // ---- Two medium cards, side by side ----
   {
-    x: 100, y: 760, width: 390, height: 330,
+    x: 61, y: 56, width: 35, height: 12,
+    brandName: 'Lumen Ledger',
+    headline: '',
+    description: '',
+    ctaText: '',
+    slug: 'lumen-ledger',
+    image: ['#0f766e', '#14b8a6', 'L'],
+  },
+  // ---- Three compact editorial listings ----
+  {
+    x: 4, y: 72, width: 30, height: 25,
     brandName: 'Atlas Boots',
-    headline: 'Built to be resoled, not replaced',
-    description:
-      'Goodyear-welted leather boots made in small batches. Buy one pair, wear it for a decade, and send it back for a fresh sole when the road finally wins.',
+    headline: 'Boots for life',
+    description: 'Retail. Handmade boots designed to be resoled, repaired and worn for years.',
     ctaText: 'See the range',
     slug: 'atlas-boots',
-    image: ['#0f766e', '#065f46', 'A'],
+    image: ['#7c2d12', '#ea580c', 'A'],
   },
   {
-    x: 510, y: 760, width: 390, height: 330,
+    x: 36, y: 72, width: 30, height: 25,
     brandName: 'Sunday Roast',
     headline: 'Dinner, sorted',
-    description:
-      'Recipe boxes with everything measured out. Cook a proper meal in thirty minutes flat, then do it again tomorrow with something new.',
+    description: 'Food & drink. A proper dinner in thirty minutes, with recipes worth keeping.',
     ctaText: 'Start cooking',
     slug: 'sunday-roast',
     image: ['#dc2626', '#991b1b', 'S'],
   },
-  // ---- Slim banner along the bottom ----
   {
-    x: 100, y: 1130, width: 800, height: 170,
+    x: 68, y: 72, width: 28, height: 25,
+    brandName: 'Signal House',
+    headline: 'Make noise wisely',
+    description: 'Culture. Independent audio and ideas for curious people.',
+    ctaText: 'Listen now',
+    slug: 'signal-house',
+    image: ['#4338ca', '#a21caf', 'S'],
+  },
+  // ---- Two detailed listings across the lower page ----
+  {
+    x: 4, y: 100, width: 45, height: 22,
+    brandName: 'Field Notes Studio',
+    headline: 'A better brief',
+    description: 'Design. Brand systems and digital products for teams building what is next.',
+    ctaText: 'See the work',
+    slug: 'field-notes-studio',
+    image: ['#be123c', '#fb7185', 'F'],
+  },
+  {
+    x: 51, y: 100, width: 45, height: 22,
     brandName: 'The Margin',
-    headline: 'A weekly letter for people who build',
-    description:
-      'Essays on design, software, and the craft of doing careful work. Free, every Sunday morning.',
-    ctaText: 'Subscribe',
+    headline: 'Made for makers',
+    description: 'Publishing. A weekly dispatch on independent work, money and the internet.',
+    ctaText: 'Read the issue',
     slug: 'the-margin',
-    image: ['#7c3aed', '#db2777', 'M'],
+    image: ['#334155', '#0f172a', 'M'],
   },
 ];
 
@@ -148,7 +176,7 @@ export function buildDemoPaper(config: PricingConfig): NewspaperState {
     headline: spec.headline,
     description: spec.description,
     destinationUrl: `https://example.com/${spec.slug}`,
-    imageUrl: demoImage(spec.image[0], spec.image[1], spec.image[2]),
+    imageUrl: spec.image ? demoImage(spec.image[0], spec.image[1], spec.image[2]) : '',
     ctaText: spec.ctaText,
     // A fixed, believable claim date — spread across recent months by index so
     // the ads don't all look bought on the same day. No live clock is read.

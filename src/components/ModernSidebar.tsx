@@ -176,13 +176,13 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
           <div className="flex justify-between gap-2">
             <dt className="text-[#6f6a80] dark:text-zinc-500">Claimed</dt>
             <dd className="font-bold text-[#191627] dark:text-zinc-200">
-              {fmtPixels(stats.claimedPixels)} px
+              {fmtPixels(stats.claimedPixels)} units
             </dd>
           </div>
           <div className="flex justify-between gap-2">
             <dt className="text-[#6f6a80] dark:text-zinc-500">Still available</dt>
             <dd className="font-bold text-[#191627] dark:text-zinc-200">
-              {fmtPixels(Math.max(0, stats.totalPixels - stats.claimedPixels))} px
+              {fmtPixels(Math.max(0, stats.totalPixels - stats.claimedPixels))} units
             </dd>
           </div>
           <div className="flex justify-between gap-2">
@@ -194,7 +194,7 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
           <div className="flex justify-between gap-2 border-t border-[#e0dcf0] pt-1 dark:border-[#2a2740]">
             <dt className="text-[#6f6a80] dark:text-zinc-500">From</dt>
             <dd className="font-bold text-[#191627] dark:text-zinc-200">
-              {fmtRate(config.baseRate)} / px
+              {fmtRate(config.baseRate)} / unit
             </dd>
           </div>
         </dl>

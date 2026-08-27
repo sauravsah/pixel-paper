@@ -138,7 +138,7 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
 
   const handleShare = useCallback(() => {
     if (!status?.ad) return;
-    const text = `I just claimed a permanent space in PIXEL PAPER — ${status.booking.width} × ${status.booking.height} px on page ${status.booking.pageNumber}.`;
+    const text = `I just claimed a permanent space in PIXEL PRESS — ${status.booking.width} × ${status.booking.height} Pixel Units on page ${status.booking.pageNumber}.`;
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
       '_blank',

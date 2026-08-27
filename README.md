@@ -1,12 +1,11 @@
-# PIXEL PAPER
+# PIXEL PRESS
 
-A permanent newspaper made of pixels. Six pages, and every pixel on them is for
-sale exactly once. Choose any available rectangle, write what should go in it, pay
-once, and it is yours — no subscription, no renewal, no expiry, and no edition
-tomorrow that replaces this one.
+A permanent digital newspaper. Nine pages of logical Pixel Units are available
+for claim, and each purchased rectangle is recorded exactly once. Choose an
+available area, add your identity, pay once, and become part of the paper.
 
-There is no seeded content. A fresh database means six blank pages, and anything
-you see on them was bought by somebody.
+The current runtime uses Supabase Postgres through its server-side connection
+pool. The browser never receives database credentials or payment secrets.
 
 ## What you need
 
@@ -37,9 +36,13 @@ explicitly, so no real card is ever charged by accident.
 
 ```bash
 npm install
-npm run migrate     # creates the tables and the six pages; safe to re-run
+npm run migrate     # creates the runtime tables and the nine pages; safe to re-run
 npm run dev         # http://localhost:3000
 ```
+
+`npm run migrate` is an explicit database step. The server checks database
+connectivity on startup but does not run schema changes automatically, so run
+the migration before the first start and whenever the schema changes.
 
 The newspaper runs and prices pages with no Dodo credentials at all; checkout is
 simply switched off until they are set. To prove the whole payment path locally
@@ -82,7 +85,9 @@ The one server both builds and serves the site; there is nothing else to stand u
    - `DODO_PAYMENTS_WEBHOOK_KEY` — leave a placeholder for now; step 4 replaces it.
 
    (`DODO_PAYMENTS_ENVIRONMENT` is set to `test_mode` in `render.yaml` itself, so a
-   Blueprint deploy never charges real cards by accident.) Deploy. When the health
+   Blueprint deploy never charges real cards by accident.) Run the explicit
+   `npm run migrate` step against this database before the first application start.
+   Then deploy. When the health
    check at `/api/health` goes green the site is up at
    `https://YOUR-APP.onrender.com`. (On the free plan the instance sleeps when idle
    and cold-starts on the next request — fine for a test deployment.)
@@ -157,10 +162,10 @@ Pending bookings hold their pixels for a few minutes and are then released
 automatically, so an abandoned checkout does not take a rectangle out of
 circulation.
 
-There are five tables. Four hold the newspaper — `newspaper_pages`,
-`pixel_bookings`, `advertisements`, `orders` — and the fifth, `webhook_events`,
-exists only to remember which webhook event ids have already been handled, which is
-what makes a replayed webhook a no-op instead of a second sale.
+The current runtime schema has five tables: `newspaper_pages`, `pixel_bookings`,
+`advertisements`, `orders`, and `webhook_events`. Supabase is used as the hosted
+Postgres database only for now; Auth, Storage, and the deferred foundation schema
+are intentionally outside the production path.
 
 ## The shape of the code
 
@@ -175,12 +180,10 @@ query, and `schema.ts` for the tables. `src/` is the React client, with
 `Broadsheet.tsx` turning pages, `NewspaperPage.tsx` handling selection and
 rendering, and the rest being chrome.
 
-Rates live in `shared/pricing-config.ts`: the base per-pixel price, the six page
-multipliers, the shape of the position field that makes the top and right of a
-page cost more than the bottom and left, and the minimum purchasable size. Change
-a number there and the price map, the sidebar, the quote and the charge all move
-together. Nothing about a buyer or what they are advertising enters the
-calculation.
+Rates live in `shared/pricing-config.ts`: the base price per logical Pixel Unit,
+the page-tier multipliers, and the minimum purchasable area. Position does not
+change price in V1. Change a number there and the price map, sidebar, quote and
+charge all move together.
 
 | Endpoint | What it does |
 | --- | --- |

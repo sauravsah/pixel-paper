@@ -71,7 +71,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
             </h3>
           )}
           <p className="font-data text-xs text-[#514c62] dark:text-[#a49eb6]">
-            {ad.width} × {ad.height} px · {fmtPixels(ad.pixelCount)} pixels · claimed
+            {ad.width} × {ad.height} Pixel Units · {fmtPixels(ad.pixelCount)} units · claimed
             permanently
           </p>
         </header>

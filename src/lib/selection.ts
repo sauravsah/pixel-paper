@@ -17,7 +17,7 @@
 
 import type { PricingConfig } from '../../shared/pricing-config.ts';
 import type { Rect } from '../../shared/pricing.ts';
-import { rectsOverlap } from '../../shared/geometry.ts';
+import { inventoryRect, rectsOverlap } from '../../shared/geometry.ts';
 import type { OccupiedArea } from '../types.ts';
 
 /** Where a pointer sits inside a page, in integer logical pixels. */
@@ -80,6 +80,20 @@ export function clampRectToPage(config: PricingConfig, rect: Rect): Rect {
   return {
     x: clamp(rect.x, 0, config.pageWidth - width),
     y: clamp(rect.y, 0, config.pageHeight - height),
+    width,
+    height,
+  };
+}
+
+/** Push a rectangle inside the purchasable band without changing its size when it fits. */
+export function clampRectToInventory(config: PricingConfig, rect: Rect): Rect {
+  const inventory = inventoryRect(config);
+  const width = clamp(rect.width, 1, inventory.width);
+  const height = clamp(rect.height, 1, inventory.height);
+
+  return {
+    x: clamp(rect.x, inventory.x, inventory.x + inventory.width - width),
+    y: clamp(rect.y, inventory.y, inventory.y + inventory.height - height),
     width,
     height,
   };

@@ -5,7 +5,7 @@
  * The explanation, kept out of the newspaper.
  *
  * This exists so the paper itself does not have to carry its own instructions.
- * Six pages of pixels that people paid for is not the place for a sales pitch, so
+ * Pages of Pixel Units that people paid for are not the place for a sales pitch, so
  * everything that needs saying about how the thing works is said here instead, and
  * the paper is left to be a paper.
  *
@@ -32,7 +32,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
     [
       '01',
       'Pick your place',
-      `Open the paper and drag out any rectangle, anywhere on any of the ${config.totalPages} pages. The price updates as you drag, and it is worked out from where the rectangle sits — nothing else.`,
+          `Open the paper and drag out any rectangle on any of the ${config.totalPages} pages. The price updates as you drag, and it is worked out from page tier and Pixel Unit count.`,
     ],
     [
       '02',
@@ -42,7 +42,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
     [
       '03',
       'Pay once',
-      `From ${fmtRate(config.baseRate)} a pixel. There is no subscription, no renewal, and no invoice next month.`,
+      `From ${fmtRate(config.baseRate)} a Pixel Unit. There is no subscription, no renewal, and no invoice next month.`,
     ],
     [
       '04',
@@ -60,10 +60,10 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
           How this works
         </div>
         <h1 className="font-masthead text-3xl font-black uppercase leading-none tracking-tight text-[#191627] dark:text-white sm:text-5xl">
-          Pixel <span className="pp-word">Paper</span>
+          Pixel <span className="pp-word">Press</span>
         </h1>
         <p className="mx-auto max-w-xl font-editorial text-base italic text-[#514c62] dark:text-[#b4aec4] sm:text-lg">
-          The internet's creative newspaper.
+          The permanent digital newspaper.
         </p>
       </header>
 
@@ -79,12 +79,13 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
           <span>Buy it once. It stays.</span>
         </div>
         <h2 className="font-headline text-2xl font-black uppercase leading-tight sm:text-3xl">
-          Buy a piece of Pixel Paper
+          Claim a piece of Pixel Press
         </h2>
         <p className="font-editorial text-sm leading-relaxed text-zinc-300 sm:text-base">
           Choose any available space. Add your link. Pay once. Stay here permanently. There are{' '}
-          {config.totalPages} pages and they are the only {config.totalPages} pages there will ever
-          be — no daily edition, no archive, nothing that expires and needs buying again.
+          {config.totalPages} launch pages, starting with the front page and continuing through
+          four spreads. Pixel Units are logical newspaper inventory, so ownership does not change
+          when the reader scales on desktop, tablet or mobile.
         </p>
       </section>
 
@@ -120,10 +121,8 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
           What changes the price
         </h4>
         <p className="font-editorial text-sm leading-relaxed text-[#332f45] dark:text-[#b4aec4]">
-          Which page, where on the page, and how many pixels. Earlier pages cost more than later
-          ones, the top of a page costs more than the bottom, and the right-hand side costs more
-          than the left, for the same reason those positions have always been worth more in print.
-          Turn on the price map while you are choosing and you can see the whole field at once.
+          Which page or spread you choose, and how many Pixel Units you claim. Earlier pages cost
+          more than later pages. Exact visual position does not change the V1 price.
         </p>
         <p className="font-editorial text-sm leading-relaxed text-[#332f45] dark:text-[#b4aec4]">
           What you are advertising makes no difference at all. There is no rate card for startups
@@ -147,9 +146,8 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
       {/* ---- Nothing here is a placeholder ---- */}
       <section className="rounded-xs border border-dashed border-[#dcd6ec] bg-[#faf8ff] p-5 dark:border-[#2a2740] dark:bg-[#141221]">
         <p className="font-editorial text-sm leading-relaxed text-[#514c62] dark:text-[#a49eb6]">
-          Every space you see filled was bought by somebody. Nothing on these pages is a sample, a
-          demonstration, or a brand put there to make the paper look busier than it is — where the
-          paper is empty, it is empty because nobody has claimed it yet.
+          Every published space is backed by database inventory. Demo placements are only examples
+          for review mode; production placements should appear after verified payment and moderation.
         </p>
       </section>
 

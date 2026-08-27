@@ -358,7 +358,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                     </span>
                     <span>•</span>
                     <span className="font-bold text-[#191627] dark:text-zinc-200">
-                      {selection.width} × {selection.height} px
+                      {selection.width} × {selection.height} Pixel Units
                     </span>
                     <span>•</span>
                     <span className="text-zinc-500 dark:text-zinc-400">
@@ -634,7 +634,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                     </span>
                   </div>
                   <span className="font-data text-[10px] font-bold text-[#7c3aed] dark:text-[#a78bfa]">
-                    {selection.width} × {selection.height} px
+                    {selection.width} × {selection.height} Pixel Units
                   </span>
                 </div>
 
@@ -644,7 +644,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
 
                 <div className="relative flex min-h-[360px] items-center justify-center rounded-xs border-2 border-dashed border-[#afa8c2] bg-[#f2effb] p-4 shadow-inner dark:border-[#332f45] dark:bg-[#0b0a14] sm:p-6">
                   <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center text-center font-masthead text-5xl font-black uppercase text-black opacity-10 dark:text-white">
-                    Pixel Paper
+                    Pixel Press
                   </div>
 
                   {/* Held at the real aspect ratio of the purchase, so the
@@ -689,7 +689,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                             {trimmed.brandName || 'Your name'}
                           </span>
                           <span className="shrink-0 font-bold opacity-60">
-                            {fmtPixels(quote.pixelCount)} px
+                            {fmtPixels(quote.pixelCount)} Pixel Units
                           </span>
                         </div>
 
@@ -796,14 +796,14 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
               <div className="space-y-3 rounded-xs border-2 border-[#191627] bg-white p-4 font-data text-xs dark:border-[#332f45] dark:bg-[#1b1826] lg:col-span-6 sm:p-5">
                 {(
                   [
-                    ['Publication', 'Pixel Paper'],
+                    ['Publication', 'Pixel Press'],
                     ['Page', `Page ${selection.pageNumber} of ${config.totalPages}`],
                     ['Position', quote.positionLabel],
                     [
                       'Area',
-                      `${selection.width} × ${selection.height} px at (${selection.x}, ${selection.y})`,
+                      `${selection.width} × ${selection.height} Pixel Units at (${selection.x}, ${selection.y})`,
                     ],
-                    ['Pixels', `${fmtPixels(quote.pixelCount)} px`],
+                    ['Pixel Units', fmtPixels(quote.pixelCount)],
                     ['Base rate', `${fmtRate(quote.baseRate)} per pixel`],
                     ['Page multiplier', `×${quote.pageMultiplier.toFixed(2)}`],
                     ['Position multiplier', `×${quote.positionMultiplier.toFixed(2)}`],

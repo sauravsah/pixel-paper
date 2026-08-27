@@ -18,7 +18,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 
 import { env, printStartupBanner, readiness } from './server/env.ts';
-import { closePool, isDatabaseConfigured, migrate, pingDatabase } from './server/db.ts';
+import { closePool, isDatabaseConfigured, pingDatabase } from './server/db.ts';
 import { createApiRouter } from './server/routes.ts';
 import { handleDodoWebhook } from './server/webhook.ts';
 import { MAX_IMAGE_BYTES } from './shared/field-rules.ts';
@@ -59,8 +59,7 @@ async function startServer(): Promise<void> {
   if (isDatabaseConfigured()) {
     try {
       await pingDatabase();
-      await migrate();
-      console.log('[db] schema up to date; six pages ready.');
+      console.log('[db] connection verified; nine pages available.');
     } catch (err: any) {
       // A database problem must not stop the newspaper from being readable, and
       // it must be impossible to miss in the log.

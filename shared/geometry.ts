@@ -38,6 +38,27 @@ export function pointInRect(rect: Rect, px: number, py: number): boolean {
   return px >= rect.x && px < rect.x + rect.width && py >= rect.y && py < rect.y + rect.height;
 }
 
+/** The logical rectangle that may be purchased on every newspaper page. */
+export function inventoryRect(config: PricingConfig): Rect {
+  return {
+    x: 0,
+    y: config.inventoryTop,
+    width: config.pageWidth,
+    height: config.inventoryBottom - config.inventoryTop,
+  };
+}
+
+/** True when a rectangle is wholly inside the purchasable inventory band. */
+export function rectInInventory(config: PricingConfig, rect: Rect): boolean {
+  const inventory = inventoryRect(config);
+  return (
+    rect.x >= inventory.x &&
+    rect.y >= inventory.y &&
+    rect.x + rect.width <= inventory.x + inventory.width &&
+    rect.y + rect.height <= inventory.y + inventory.height
+  );
+}
+
 /**
  * Strictly coerce an untrusted value to a whole number, or return `null`.
  *
@@ -67,6 +88,7 @@ export type SelectionError =
   | 'invalid-page'
   | 'non-integer'
   | 'out-of-bounds'
+  | 'outside-inventory'
   | 'too-small'
   | 'too-large';
 
@@ -132,6 +154,14 @@ export function validateSelection(
       ok: false,
       error: 'out-of-bounds',
       message: `Selection must sit inside the ${config.pageWidth} x ${config.pageHeight} page.`,
+    };
+  }
+
+  if (!rectInInventory(config, { x: rx, y: ry, width: rw, height: rh })) {
+    return {
+      ok: false,
+      error: 'outside-inventory',
+      message: `Selection must stay inside the purchasable newspaper area (rows ${config.inventoryTop} through ${config.inventoryBottom - 1}).`,
     };
   }
 

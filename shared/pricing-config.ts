@@ -1,73 +1,47 @@
 /**
- * PIXEL PAPER — CENTRAL PRICING & CANVAS CONFIGURATION
- * ============================================================
+ * PIXEL PRESS — CENTRAL PRICING & INVENTORY CONFIGURATION
+ * =======================================================
  *
- * This is the ONE place where pricing and page geometry are defined.
+ * Pixel Units are logical newspaper inventory units, not screen pixels.
+ * Pricing in V1 depends only on page/spread tier and unit count:
  *
- * The server treats this file as authoritative and serves it to the browser via
- * `GET /api/config`. The browser never hard-codes any of these numbers, so you
- * can change anything here, restart the server, and both the newspaper UI and
- * the money that actually gets charged move together.
+ *   Pixel Units x base rate x page multiplier
  *
- * Pricing depends ONLY on: page number, position on the page, visual attention,
- * and pixel count. It never depends on who is buying or what they are promoting.
- * There are no advertiser categories anywhere in this system.
+ * Exact visual position is intentionally not part of V1 pricing.
  */
 
 export interface PricingConfig {
-  /** Logical pixel resolution of every page. All coordinates are integers in this space. */
+  /** Logical Pixel Unit resolution of every page. */
   pageWidth: number;
   pageHeight: number;
 
-  /** Number of permanent pages in the newspaper. */
+  /** Inclusive top and exclusive bottom rows of purchasable page inventory. */
+  inventoryTop: number;
+  inventoryBottom: number;
+
+  /** Initial launch pages. Administrators can add pages in the database-backed architecture. */
   totalPages: number;
 
-  /** Base price in USD for a single pixel, before any multipliers. */
+  /** Base price in USD for one logical Pixel Unit. */
   baseRate: number;
 
   /** Per-page multiplier, keyed by page number. */
   pageMultipliers: Record<number, number>;
 
-  /** Shape of the continuous position-attention field. See `positionMultiplier`. */
-  position: {
-    /** Multiplier at the very top edge of the page. */
-    topWeight: number;
-    /** Multiplier at the very bottom edge of the page. */
-    bottomWeight: number;
-    /** Multiplier at the left edge. */
-    leftWeight: number;
-    /** Multiplier at the right edge. Keep above `leftWeight` so right costs more. */
-    rightWeight: number;
-    /** Normalised (0..1) centre of the eye-attention hot spot. */
-    focusX: number;
-    focusY: number;
-    /** How wide the hot spot spreads, in normalised units. */
-    focusRadiusX: number;
-    focusRadiusY: number;
-    /** Extra multiplier at the exact centre of the hot spot (0.10 = +10%). */
-    focusStrength: number;
-    /** Hard floor and ceiling on the position multiplier. */
-    min: number;
-    max: number;
-  };
-
-  /** Smallest rectangle that may be purchased, in logical pixels. */
+  /** Smallest rectangle that may be purchased, in logical Pixel Units. */
   minSelectionWidth: number;
   minSelectionHeight: number;
 
-  /**
-   * Floor on any single charge, in cents.
-   * Card networks reject charges below 50c USD, so this must stay >= 50.
-   */
+  /** Payment-provider lower bound, in cents. */
   minChargeCents: number;
 
-  /** Upper bound on a single charge, in cents. A guard against runaway input. */
+  /** Upper bound on one charge, in cents. */
   maxChargeCents: number;
 
-  /** How long a pending checkout holds its pixels before the area is released. */
+  /** How long a pending checkout holds inventory before release. */
   pendingHoldMinutes: number;
 
-  /** Thresholds that turn a position multiplier into a human-facing tier label. */
+  /** Thresholds that map page multipliers onto editorial pricing labels. */
   tierThresholds: {
     premium: number;
     high: number;
@@ -76,38 +50,30 @@ export interface PricingConfig {
 }
 
 export const PRICING_CONFIG: PricingConfig = {
-  pageWidth: 1000,
-  pageHeight: 1400,
-  totalPages: 6,
+  pageWidth: 100,
+  pageHeight: 140,
+  // The masthead and footer are printed furniture, not purchasable inventory.
+  inventoryTop: 28,
+  inventoryBottom: 132,
+  totalPages: 9,
 
-  // $0.0001 per pixel === $100 per million pixels.
-  baseRate: 0.0001,
+  // $0.01 per Pixel Unit.
+  baseRate: 0.01,
 
   pageMultipliers: {
-    1: 1.5,
-    2: 1.25,
-    3: 1.15,
-    4: 1.1,
-    5: 1.0,
-    6: 0.9,
+    1: 5.0,
+    2: 2.5,
+    3: 2.5,
+    4: 1.75,
+    5: 1.75,
+    6: 1.25,
+    7: 1.25,
+    8: 1.0,
+    9: 1.0,
   },
 
-  position: {
-    topWeight: 1.3,
-    bottomWeight: 0.82,
-    leftWeight: 0.94,
-    rightWeight: 1.1,
-    focusX: 0.5,
-    focusY: 0.34,
-    focusRadiusX: 0.42,
-    focusRadiusY: 0.3,
-    focusStrength: 0.1,
-    min: 0.7,
-    max: 1.75,
-  },
-
-  minSelectionWidth: 40,
-  minSelectionHeight: 40,
+  minSelectionWidth: 2,
+  minSelectionHeight: 2,
 
   minChargeCents: 50,
   maxChargeCents: 5_000_00,
@@ -115,9 +81,9 @@ export const PRICING_CONFIG: PricingConfig = {
   pendingHoldMinutes: 20,
 
   tierThresholds: {
-    premium: 1.34,
-    high: 1.16,
-    medium: 0.98,
+    premium: 5.0,
+    high: 2.5,
+    medium: 1.25,
   },
 };
 

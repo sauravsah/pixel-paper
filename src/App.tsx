@@ -654,7 +654,7 @@ export default function App() {
         <div className="sticky bottom-0 z-30 flex items-center justify-between gap-3 border-t-2 border-[#191627] bg-[#faf9fe] px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-[#332f45] dark:bg-[#131120] lg:hidden">
           <div className="min-w-0">
             <div className="font-data text-[10px] uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
-              {selection.width} × {selection.height} px · page {selection.pageNumber}
+              {selection.width} × {selection.height} Pixel Units · page {selection.pageNumber}
             </div>
             <div className="font-headline text-xl font-black leading-none text-[#191627] dark:text-white">
               {usd(selection.quote.totalPrice)}
