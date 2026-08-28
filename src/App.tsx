@@ -404,10 +404,6 @@ export default function App() {
     return notes;
   }, [config]);
 
-  const liveKeyWarning = Boolean(
-    config && config.readiness.payments && !config.readiness.testMode
-  );
-
   /** The invented, fully-packed paper shown while demo mode is on. */
   const demoPaper = useMemo(
     () => (config ? buildDemoPaper(config.pricing) : null),
@@ -575,13 +571,6 @@ export default function App() {
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
-      )}
-
-      {liveKeyWarning && !bannerDismissed && (
-        <div className="flex items-center gap-2 border-b border-[#7c3aed] bg-[#7c3aed] px-4 py-2 font-data text-[11px] font-bold uppercase tracking-wider text-white dark:border-[#a78bfa] dark:bg-[#a78bfa]">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>Dodo is in live mode. Real cards will be charged.</span>
         </div>
       )}
 
