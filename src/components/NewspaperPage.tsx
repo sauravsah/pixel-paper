@@ -125,6 +125,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
   const pageMultiplier = config.pageMultipliers[pageNumber] ?? 1;
   const totalPagePixels = config.pageWidth * config.pageHeight;
+  const inventory = inventoryRect(config, pageNumber);
 
   /** Only this page's selection is ours to draw. */
   const activeSelection = selection && selection.pageNumber === pageNumber ? selection : null;
@@ -148,9 +149,9 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
     (event: React.PointerEvent): LogicalPoint | null => {
       const bounds = canvasRef.current?.getBoundingClientRect();
       if (!bounds) return null;
-      return toLogicalPoint(config, bounds, event.clientX, event.clientY);
+      return toLogicalPoint(config, bounds, event.clientX, event.clientY, inventory);
     },
-    [config]
+    [config, inventory]
   );
 
   /** Wrap a rectangle into a priced selection. Local arithmetic, server confirms. */
@@ -180,7 +181,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
   const candidateFor = useCallback(
     (drag: DragState, point: LogicalPoint): Rect | null => {
       if (drag.mode === 'create') {
-        const raw = clampRectToInventory(config, rectFromDrag(drag.anchor, point));
+        const raw = clampRectToInventory(config, rectFromDrag(drag.anchor, point), pageNumber);
         const trimmed = clampAgainstOccupied(raw, occupied);
         return trimmed.width > 0 && trimmed.height > 0 ? trimmed : null;
       }
@@ -194,7 +195,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
           y: o.y + (point.y - drag.from.y),
           width: o.width,
           height: o.height,
-        });
+        }, pageNumber);
       } else {
         // Resize: recompute the two moving edges, keep the opposite ones fixed.
         let left = o.x;
@@ -212,12 +213,12 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
           y: top,
           width: right - left + 1,
           height: bottom - top + 1,
-        });
+        }, pageNumber);
       }
 
       return firstBlocker(next, occupied) ? null : next;
     },
-    [config, occupied]
+    [config, occupied, pageNumber]
   );
 
   // -------------------------------------------------------------------------
@@ -243,7 +244,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       if (!point) return;
 
       if (mode === 'create') {
-        if (!pointInRect(inventoryRect(config), point.x, point.y)) {
+        if (!pointInRect(inventory, point.x, point.y)) {
           return;
         }
 
@@ -270,7 +271,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       event.preventDefault();
       event.stopPropagation();
     },
-    [activeSelection, config, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
+    [activeSelection, config, inventory, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
   );
 
   const handlePointerMove = useCallback(
@@ -288,7 +289,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
       if (!drag) {
         // Not dragging: the cursor's job is to say whether this pixel is for sale.
         if (isSelectMode) {
-          const inInventory = pointInRect(inventoryRect(config), point.x, point.y);
+          const inInventory = pointInRect(inventory, point.x, point.y);
           setHoverBlocked(!inInventory || occupiedAt(occupied, point) !== null);
         }
         return;
@@ -299,7 +300,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
       event.preventDefault();
     },
-    [candidateFor, config, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
+    [candidateFor, config, inventory, isSelectMode, occupied, onSelectionChange, pointFromEvent, priced]
   );
 
   const endDrag = useCallback(
@@ -389,6 +390,17 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
   const cursor = isSelectMode ? (hoverBlocked ? 'not-allowed' : 'crosshair') : 'default';
   const tooSmall = activeSelection ? isBelowMinimum(config, activeSelection) : false;
+
+  /** logical pixels -> percentages inside the bookable inventory surface */
+  const inventoryBox = useCallback(
+    (rect: Rect) => ({
+      left: `${((rect.x - inventory.x) / inventory.width) * 100}%`,
+      top: `${((rect.y - inventory.y) / inventory.height) * 100}%`,
+      width: `${(rect.width / inventory.width) * 100}%`,
+      height: `${(rect.height / inventory.height) * 100}%`,
+    }),
+    [inventory]
+  );
 
   return (
     <div className="relative w-full">
@@ -515,8 +527,8 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
         {isSelectMode && (
           <div
             ref={canvasRef}
-            className="absolute inset-0"
-            style={{ cursor, touchAction: 'pinch-zoom' }}
+            className="absolute"
+            style={{ ...box(inventory), cursor, touchAction: 'pinch-zoom' }}
             onPointerDown={(event) => beginDrag(event, 'create')}
             onPointerMove={handlePointerMove}
             onPointerUp={endDrag}
@@ -534,7 +546,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
               <div
                 key={`${area.x}-${area.y}-${index}`}
                 className="claimed-hatch absolute flex items-center justify-center overflow-hidden border border-dashed border-[#d97706] dark:border-[#f59e0b]"
-                style={{ ...box(area), cursor: 'not-allowed' }}
+                style={{ ...inventoryBox(area), cursor: 'not-allowed' }}
                 title="Someone is checking out for this area right now"
               >
                 <span className="flex items-center gap-1 whitespace-nowrap rounded-xs bg-[#191627]/85 px-1.5 py-0.5 font-data text-[8px] font-black uppercase tracking-widest text-white dark:bg-[#f2f0fb]/90 dark:text-[#191627]">
@@ -552,7 +564,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
                     ? 'border-[#d97706] bg-[#d97706]/12 dark:border-[#f59e0b] dark:bg-[#f59e0b]/15'
                     : 'border-[#2563eb] bg-[#2563eb]/12 dark:border-[#60a5fa] dark:bg-[#60a5fa]/15'
                 }`}
-                style={{ ...box(activeSelection), cursor: isDragging ? 'grabbing' : 'move' }}
+                style={{ ...inventoryBox(activeSelection), cursor: isDragging ? 'grabbing' : 'move' }}
                 onPointerDown={(event) => beginDrag(event, 'move')}
               >
                 {/* Eight handles. Each grabs its own edges; the opposite edges
@@ -587,7 +599,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
                 selection={activeSelection}
                 config={config}
                 tooSmall={tooSmall}
-                box={box(activeSelection)}
+                box={inventoryBox(activeSelection)}
               />
             )}
           </div>

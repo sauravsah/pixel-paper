@@ -21,6 +21,7 @@ import {
 import {
   clampAgainstOccupied,
   inventoryRect,
+  inventoryTopForPage,
   pointInRect,
   rectInInventory,
   rectsOverlap,
@@ -84,9 +85,9 @@ test('effective rate is base x page multiplier x neutral position multiplier', (
 test('amounts are always whole cents and total price is derived from them', () => {
   const quotes = [
     inventoryQuoteAt(1, 0, CFG.inventoryTop, 2, 2),
-    inventoryQuoteAt(4, 10, CFG.inventoryTop + 1, 7, 11),
+    inventoryQuoteAt(4, 10, inventoryTopForPage(CFG, 4) + 1, 7, 11),
     inventoryQuoteAt(9, 30, CFG.inventoryBottom - 20, 20, 20),
-    inventoryQuoteAt(2, 0, CFG.inventoryTop, CFG.pageWidth, CFG.inventoryBottom - CFG.inventoryTop),
+    inventoryQuoteAt(2, 0, inventoryTopForPage(CFG, 2), CFG.pageWidth, CFG.inventoryBottom - inventoryTopForPage(CFG, 2)),
   ];
 
   for (const quote of quotes) {
@@ -96,16 +97,16 @@ test('amounts are always whole cents and total price is derived from them', () =
 });
 
 test('repeating the same quote calculation is deterministic', () => {
-  const expected = inventoryQuoteAt(4, 23, CFG.inventoryTop + 9, 17, 13);
+  const expected = inventoryQuoteAt(4, 23, inventoryTopForPage(CFG, 4) + 9, 17, 13);
 
   for (let attempt = 0; attempt < 25; attempt++) {
-    assert.deepEqual(inventoryQuoteAt(4, 23, CFG.inventoryTop + 9, 17, 13), expected);
+    assert.deepEqual(inventoryQuoteAt(4, 23, inventoryTopForPage(CFG, 4) + 9, 17, 13), expected);
   }
 });
 
 test('price increases with area within one page tier', () => {
-  const smaller = inventoryQuoteAt(8, 10, CFG.inventoryTop + 2, 10, 10);
-  const larger = inventoryQuoteAt(8, 10, CFG.inventoryTop + 2, 20, 20);
+  const smaller = inventoryQuoteAt(8, 10, inventoryTopForPage(CFG, 8) + 2, 10, 10);
+  const larger = inventoryQuoteAt(8, 10, inventoryTopForPage(CFG, 8) + 2, 20, 20);
 
   assert.equal(smaller.pageMultiplier, larger.pageMultiplier);
   assert.ok(larger.pixelCount > smaller.pixelCount);
@@ -205,9 +206,9 @@ test('point containment uses the same half-open rule', () => {
 });
 
 test('a well formed inventory selection validates', () => {
-  const r = validateSelection(CFG, 2, 10, CFG.inventoryTop, 30, 40);
+  const r = validateSelection(CFG, 2, 10, inventoryTopForPage(CFG, 2), 30, 40);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.rect, { x: 10, y: CFG.inventoryTop, width: 30, height: 40 });
+  assert.deepEqual(r.rect, { x: 10, y: inventoryTopForPage(CFG, 2), width: 30, height: 40 });
 });
 
 test('bad pages are rejected and pages 1..9 are accepted', () => {
@@ -215,14 +216,14 @@ test('bad pages are rejected and pages 1..9 are accepted', () => {
     assert.equal(validateSelection(CFG, page, 0, CFG.inventoryTop, 10, 10).ok, false, `page ${String(page)}`);
   }
   for (let page = 1; page <= CFG.totalPages; page++) {
-    assert.equal(validateSelection(CFG, page, 0, CFG.inventoryTop, 10, 10).ok, true, `page ${page}`);
+    assert.equal(validateSelection(CFG, page, 0, inventoryTopForPage(CFG, page), 10, 10).ok, true, `page ${page}`);
   }
 });
 
 test('numeric strings from a form post are accepted', () => {
-  const r = validateSelection(CFG, '3', '10', String(CFG.inventoryTop), '30', '40');
+  const r = validateSelection(CFG, '3', '10', String(inventoryTopForPage(CFG, 3)), '30', '40');
   assert.equal(r.ok, true);
-  assert.deepEqual(r.rect, { x: 10, y: CFG.inventoryTop, width: 30, height: 40 });
+  assert.deepEqual(r.rect, { x: 10, y: inventoryTopForPage(CFG, 3), width: 30, height: 40 });
 });
 
 test('coordinates outside the logical page are rejected', () => {
@@ -296,7 +297,7 @@ test('selections smaller than the minimum are rejected', () => {
 });
 
 test('inventory boundaries are inclusive at the top and exclusive at the bottom', () => {
-  const inventory = inventoryRect(CFG);
+  const inventory = inventoryRect(CFG, 1);
   assert.equal(rectInInventory(CFG, { x: 0, y: CFG.inventoryTop, width: CFG.pageWidth, height: inventory.height }), true);
   assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryTop, 10, 10).ok, true);
   assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryBottom - 10, 10, 10).ok, true);
@@ -304,10 +305,35 @@ test('inventory boundaries are inclusive at the top and exclusive at the bottom'
   assert.equal(validateSelection(CFG, 1, 0, CFG.inventoryBottom - 1, 10, 2).error, 'outside-inventory');
 });
 
+test('cover inventory starts exactly below its double-line header', () => {
+  const top = inventoryTopForPage(CFG, 1);
+  assert.equal(validateSelection(CFG, 1, 0, top, 2, 2).ok, true);
+  assert.equal(validateSelection(CFG, 1, 0, top - 1, 2, 2).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 1, 0, top, 2, CFG.inventoryBottom - top).ok, true);
+});
+
+test('interior inventory starts exactly below its single header line', () => {
+  const top = inventoryTopForPage(CFG, 2);
+  assert.equal(validateSelection(CFG, 2, 0, top, 2, 2).ok, true);
+  assert.equal(validateSelection(CFG, 2, 0, top - 1, 2, 2).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 2, 0, top, 2, CFG.inventoryBottom - top).ok, true);
+});
+
+test('the footer is outside inventory on every page', () => {
+  for (let page = 1; page <= CFG.totalPages; page++) {
+    assert.equal(
+      validateSelection(CFG, page, 0, CFG.inventoryBottom - 1, 2, 2).error,
+      'outside-inventory',
+      `page ${page}`
+    );
+  }
+});
+
 test('a selection cannot cross from inventory into header or footer', () => {
-  assert.equal(validateSelection(CFG, 1, 10, CFG.inventoryTop - 1, 10, 4).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 1, 10, inventoryTopForPage(CFG, 1) - 1, 10, 4).error, 'outside-inventory');
+  assert.equal(validateSelection(CFG, 2, 10, inventoryTopForPage(CFG, 2) - 1, 10, 4).error, 'outside-inventory');
   assert.equal(validateSelection(CFG, 1, 10, CFG.inventoryBottom - 2, 10, 4).error, 'outside-inventory');
-  assert.equal(validateSelection(CFG, 9, 0, CFG.inventoryTop, CFG.pageWidth, CFG.inventoryBottom - CFG.inventoryTop).ok, true);
+  assert.equal(validateSelection(CFG, 9, 0, inventoryTopForPage(CFG, 9), CFG.pageWidth, CFG.inventoryBottom - inventoryTopForPage(CFG, 9)).ok, true);
 });
 
 test('a dragged rectangle is pulled back out of occupied pixels', () => {

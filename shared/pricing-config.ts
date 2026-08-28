@@ -15,8 +15,11 @@ export interface PricingConfig {
   pageWidth: number;
   pageHeight: number;
 
-  /** Inclusive top and exclusive bottom rows of purchasable page inventory. */
+  /** Inclusive top row of purchasable cover inventory. */
   inventoryTop: number;
+  /** Inclusive top row of purchasable inventory on interior pages. */
+  interiorInventoryTop: number;
+  /** Exclusive bottom row of purchasable inventory on every page. */
   inventoryBottom: number;
 
   /** Initial launch pages. Administrators can add pages in the database-backed architecture. */
@@ -52,8 +55,11 @@ export interface PricingConfig {
 export const PRICING_CONFIG: PricingConfig = {
   pageWidth: 100,
   pageHeight: 140,
-  // The masthead and footer are printed furniture, not purchasable inventory.
-  inventoryTop: 28,
+  // The first bookable rows are the measured lower edges of the rendered
+  // masthead rules: cover row 21, interior-page row 8. The footer begins at row
+  // 132 and remains outside the inventory band.
+  inventoryTop: 21,
+  interiorInventoryTop: 8,
   inventoryBottom: 132,
   totalPages: 9,
 

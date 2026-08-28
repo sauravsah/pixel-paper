@@ -42,14 +42,23 @@ export function toLogicalPoint(
   config: PricingConfig,
   bounds: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  logicalArea: Rect
 ): LogicalPoint {
   const u = bounds.width > 0 ? (clientX - bounds.left) / bounds.width : 0;
   const v = bounds.height > 0 ? (clientY - bounds.top) / bounds.height : 0;
 
   return {
-    x: clamp(Math.floor(u * config.pageWidth), 0, config.pageWidth - 1),
-    y: clamp(Math.floor(v * config.pageHeight), 0, config.pageHeight - 1),
+    x: clamp(
+      Math.floor(u * logicalArea.width) + logicalArea.x,
+      logicalArea.x,
+      logicalArea.x + logicalArea.width - 1
+    ),
+    y: clamp(
+      Math.floor(v * logicalArea.height) + logicalArea.y,
+      logicalArea.y,
+      logicalArea.y + logicalArea.height - 1
+    ),
   };
 }
 
@@ -86,8 +95,8 @@ export function clampRectToPage(config: PricingConfig, rect: Rect): Rect {
 }
 
 /** Push a rectangle inside the purchasable band without changing its size when it fits. */
-export function clampRectToInventory(config: PricingConfig, rect: Rect): Rect {
-  const inventory = inventoryRect(config);
+export function clampRectToInventory(config: PricingConfig, rect: Rect, pageNumber = 1): Rect {
+  const inventory = inventoryRect(config, pageNumber);
   const width = clamp(rect.width, 1, inventory.width);
   const height = clamp(rect.height, 1, inventory.height);
 

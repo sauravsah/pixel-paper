@@ -38,19 +38,25 @@ export function pointInRect(rect: Rect, px: number, py: number): boolean {
   return px >= rect.x && px < rect.x + rect.width && py >= rect.y && py < rect.y + rect.height;
 }
 
-/** The logical rectangle that may be purchased on every newspaper page. */
-export function inventoryRect(config: PricingConfig): Rect {
+/** The first purchasable row, derived from the page's rendered header type. */
+export function inventoryTopForPage(config: PricingConfig, pageNumber: number): number {
+  return pageNumber === 1 ? config.inventoryTop : config.interiorInventoryTop;
+}
+
+/** The logical rectangle that may be purchased on a newspaper page. */
+export function inventoryRect(config: PricingConfig, pageNumber = 1): Rect {
+  const top = inventoryTopForPage(config, pageNumber);
   return {
     x: 0,
-    y: config.inventoryTop,
+    y: top,
     width: config.pageWidth,
-    height: config.inventoryBottom - config.inventoryTop,
+    height: config.inventoryBottom - top,
   };
 }
 
 /** True when a rectangle is wholly inside the purchasable inventory band. */
-export function rectInInventory(config: PricingConfig, rect: Rect): boolean {
-  const inventory = inventoryRect(config);
+export function rectInInventory(config: PricingConfig, rect: Rect, pageNumber = 1): boolean {
+  const inventory = inventoryRect(config, pageNumber);
   return (
     rect.x >= inventory.x &&
     rect.y >= inventory.y &&
@@ -157,11 +163,13 @@ export function validateSelection(
     };
   }
 
-  if (!rectInInventory(config, { x: rx, y: ry, width: rw, height: rh })) {
+  const inventory = inventoryRect(config, page);
+
+  if (!rectInInventory(config, { x: rx, y: ry, width: rw, height: rh }, page)) {
     return {
       ok: false,
       error: 'outside-inventory',
-      message: `Selection must stay inside the purchasable newspaper area (rows ${config.inventoryTop} through ${config.inventoryBottom - 1}).`,
+      message: `Selection must stay inside the purchasable newspaper area (rows ${inventory.y} through ${inventory.y + inventory.height - 1}).`,
     };
   }
 
