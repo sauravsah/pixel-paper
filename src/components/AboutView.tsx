@@ -79,7 +79,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
           <span>Buy it once. It stays.</span>
         </div>
         <h2 className="font-headline text-2xl font-black uppercase leading-tight sm:text-3xl">
-          Claim a piece of Pixel Press
+          Claim a piece of Pixel Paper
         </h2>
         <p className="font-editorial text-sm leading-relaxed text-zinc-300 sm:text-base">
           Choose any available space. Add your link. Pay once. Stay here permanently. There are{' '}

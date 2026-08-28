@@ -1,5 +1,5 @@
 /**
- * Pure-logic tests for Pixel Press pricing and inventory geometry.
+ * Pure-logic tests for Pixel Paper pricing and inventory geometry.
  *
  * Pixel Units are logical newspaper inventory units. They do not change with
  * viewport size, and V1 pricing ignores exact visual position.

@@ -1,4 +1,4 @@
-# PIXEL PRESS
+# PIXEL PAPER
 
 A permanent digital newspaper. Nine pages of logical Pixel Units are available
 for claim, and each purchased rectangle is recorded exactly once. Choose an

@@ -153,7 +153,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
           <section className="rounded-xs border border-dashed border-[#dcd6ec] bg-white p-4 text-center dark:border-[#2a2740] dark:bg-[#131120]">
             <MousePointerClick className="mx-auto mb-2 h-6 w-6 text-[#6f6a80] dark:text-zinc-500" />
             <h2 className="font-headline text-base font-black uppercase tracking-tight text-[#191627] dark:text-white">
-              Claim a piece of Pixel Press
+              Claim a piece of Pixel Paper
             </h2>
             <p className="mt-1 font-editorial text-xs leading-snug text-[#514c62] dark:text-[#a49eb6]">
               Choose available newspaper space. Add your identity. Become part of the paper.

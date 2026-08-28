@@ -1,7 +1,7 @@
 import { useId } from 'react';
 
 /**
- * PIXEL PRESS brand mark.
+ * PIXEL PAPER brand mark.
  *
  * The glyph is a small pixel canvas — a 4×4 grid of cells. Most sit faint and
  * "unclaimed"; a diagonal stroke of cells is lit in the brand gradient (the
@@ -110,7 +110,7 @@ export function PixelMark({ size = 28, className, bright = false, ...rest }: Pix
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       role="img"
-      aria-label={rest['aria-hidden'] ? undefined : 'Pixel Press'}
+      aria-label={rest['aria-hidden'] ? undefined : 'Pixel Paper'}
       aria-hidden={rest['aria-hidden']}
     >
       <defs>
@@ -132,7 +132,7 @@ interface WordmarkProps {
 }
 
 /**
- * "PIXEL PRESS" wordmark. "PIXEL" in ink, "PRESS" in the brand gradient, so the
+ * "PIXEL PAPER" wordmark. "PIXEL" in ink, "PAPER" in the brand gradient, so the
  * name carries the same colour story as the mark without shouting.
  */
 export function PixelWordmark({ className = '', size = 'text-lg' }: WordmarkProps) {
@@ -141,7 +141,7 @@ export function PixelWordmark({ className = '', size = 'text-lg' }: WordmarkProp
       className={`font-headline font-bold uppercase leading-none tracking-tight ${size} ${className}`}
     >
       <span className="text-[#191627] dark:text-[#f2f0fb]">Pixel</span>
-      <span className="pp-word"> Press</span>
+      <span className="pp-word"> Paper</span>
     </span>
   );
 }

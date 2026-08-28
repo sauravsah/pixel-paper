@@ -644,7 +644,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
 
                 <div className="relative flex min-h-[360px] items-center justify-center rounded-xs border-2 border-dashed border-[#afa8c2] bg-[#f2effb] p-4 shadow-inner dark:border-[#332f45] dark:bg-[#0b0a14] sm:p-6">
                   <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center text-center font-masthead text-5xl font-black uppercase text-black opacity-10 dark:text-white">
-                    Pixel Press
+                    Pixel Paper
                   </div>
 
                   {/* Held at the real aspect ratio of the purchase, so the
@@ -796,7 +796,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
               <div className="space-y-3 rounded-xs border-2 border-[#191627] bg-white p-4 font-data text-xs dark:border-[#332f45] dark:bg-[#1b1826] lg:col-span-6 sm:p-5">
                 {(
                   [
-                    ['Publication', 'Pixel Press'],
+                    ['Publication', 'Pixel Paper'],
                     ['Page', `Page ${selection.pageNumber} of ${config.totalPages}`],
                     ['Position', quote.positionLabel],
                     [

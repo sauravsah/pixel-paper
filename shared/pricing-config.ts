@@ -1,5 +1,5 @@
 /**
- * PIXEL PRESS — CENTRAL PRICING & INVENTORY CONFIGURATION
+ * PIXEL PAPER — CENTRAL PRICING & INVENTORY CONFIGURATION
  * =======================================================
  *
  * Pixel Units are logical newspaper inventory units, not screen pixels.

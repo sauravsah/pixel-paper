@@ -94,7 +94,7 @@ export function printStartupBanner(): void {
   const report = readiness();
 
   console.log('');
-  console.log('  PIXEL PRESS');
+  console.log('  PIXEL PAPER');
   console.log('  -----------');
   console.log(`  Database   ${report.databaseReady ? 'connected' : 'NOT CONFIGURED'}`);
   console.log(

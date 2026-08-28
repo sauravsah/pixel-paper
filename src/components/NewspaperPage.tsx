@@ -122,7 +122,6 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
   const [isDragging, setIsDragging] = useState(false);
   const [hoverBlocked, setHoverBlocked] = useState(false);
-  const [refusedAt, setRefusedAt] = useState<number>(0);
 
   const pageMultiplier = config.pageMultipliers[pageNumber] ?? 1;
   const totalPagePixels = config.pageWidth * config.pageHeight;
@@ -245,13 +244,11 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
       if (mode === 'create') {
         if (!pointInRect(inventoryRect(config), point.x, point.y)) {
-          setRefusedAt(Date.now());
           return;
         }
 
         // Starting on top of somebody's pixels is refused outright.
         if (occupiedAt(occupied, point)) {
-          setRefusedAt(Date.now());
           return;
         }
         onSelectionChange(priced({ x: point.x, y: point.y, width: 1, height: 1 }));
@@ -392,7 +389,6 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
   const cursor = isSelectMode ? (hoverBlocked ? 'not-allowed' : 'crosshair') : 'default';
   const tooSmall = activeSelection ? isBelowMinimum(config, activeSelection) : false;
-  const refusedRecently = Date.now() - refusedAt < 1200;
 
   return (
     <div className="relative w-full">
@@ -423,7 +419,7 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
             </header>
           ) : (
             <header className="flex items-baseline justify-between border-b border-[#191627]/30 pb-[1%] font-data text-[0.62vw] font-bold uppercase tracking-[0.25em] text-[#191627]/60 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/50 sm:text-[9px]">
-              <span>Pixel Press</span>
+              <span>Pixel Paper</span>
               <span>Page {pageNumber}</span>
             </header>
           )}
@@ -530,25 +526,20 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
             {/* Faint measuring grid, only while selecting. */}
             <div className="pixel-grid pointer-events-none absolute inset-0" />
 
-            {/* Claimed and held areas. Hatched, cursor refused, never selectable. */}
-            {occupied.map((area, index) => (
+            {/* Pending holds are shown while they block the canvas. Paid areas
+                already have their advertisement rendered above; keeping their
+                hatch overlay off leaves the paper clean while `occupied` still
+                blocks selection through the pointer handlers and server checks. */}
+            {occupied.filter((area) => area.status === 'pending').map((area, index) => (
               <div
                 key={`${area.x}-${area.y}-${index}`}
-                className={`claimed-hatch absolute flex items-center justify-center overflow-hidden border ${
-                  area.status === 'paid'
-                    ? 'border-[#191627]/50 dark:border-white/35'
-                    : 'border-dashed border-[#d97706] dark:border-[#f59e0b]'
-                }`}
+                className="claimed-hatch absolute flex items-center justify-center overflow-hidden border border-dashed border-[#d97706] dark:border-[#f59e0b]"
                 style={{ ...box(area), cursor: 'not-allowed' }}
-                title={
-                  area.status === 'paid'
-                    ? 'Permanently claimed'
-                    : 'Someone is checking out for this area right now'
-                }
+                title="Someone is checking out for this area right now"
               >
                 <span className="flex items-center gap-1 whitespace-nowrap rounded-xs bg-[#191627]/85 px-1.5 py-0.5 font-data text-[8px] font-black uppercase tracking-widest text-white dark:bg-[#f2f0fb]/90 dark:text-[#191627]">
                   <Lock className="h-2.5 w-2.5" />
-                  {area.status === 'paid' ? 'Permanently claimed' : 'Held'}
+                  Held
                 </span>
               </div>
             ))}
@@ -598,14 +589,6 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
                 tooSmall={tooSmall}
                 box={box(activeSelection)}
               />
-            )}
-
-            {refusedRecently && (
-              <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
-                <span className="rounded-xs bg-[#191627] px-2.5 py-1 font-data text-[10px] font-black uppercase tracking-widest text-white shadow-lg dark:bg-[#f2f0fb] dark:text-[#191627]">
-                  Those pixels are already owned
-                </span>
-              </div>
             )}
           </div>
         )}

@@ -1,5 +1,5 @@
 /**
- * PIXEL PRESS — PRICING ENGINE
+ * PIXEL PAPER — PRICING ENGINE
  * ============================
  *
  * Imported by both the Express server and React client. The browser may preview
