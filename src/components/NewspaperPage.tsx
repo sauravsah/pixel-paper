@@ -413,24 +413,24 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
           ================================================================== */}
       <div
         className="newsprint broadsheet-shadow relative w-full overflow-hidden border border-[#dcd6ec] dark:border-[#2a2740]"
-        style={{ aspectRatio: `${config.pageWidth} / ${config.pageHeight}` }}
+        style={{ aspectRatio: `${config.pageWidth} / ${config.pageHeight}`, containerType: 'inline-size' }}
       >
         {/* ---------- Static page furniture ---------- */}
         <div className="pointer-events-none absolute inset-0 flex flex-col p-[3%]">
           {isCover ? (
             <header className="border-double-thick border-[#191627] pb-[1.5%] text-center text-[#191627] dark:border-[#332f47] dark:text-[#f2f0fb]">
-              <div className="font-data text-[0.62vw] font-bold uppercase tracking-[0.35em] opacity-70 sm:text-[9px]">
+              <div className="font-data text-[clamp(6px,2cqw,9px)] font-bold uppercase tracking-[0.35em] opacity-70">
                 Where every pixel can become yours
               </div>
-              <h1 className="font-masthead text-[5.2vw] leading-[0.95] font-black uppercase tracking-tight sm:text-[3.4vw] lg:text-[2.6vw]">
+              <h1 className="font-masthead text-[clamp(20px,8cqw,42px)] leading-[0.95] font-black uppercase tracking-tight">
                 Pixel <span className="pp-word">Paper</span>
               </h1>
-              <div className="font-editorial text-[0.75vw] italic opacity-70 sm:text-[10px]">
+              <div className="font-editorial text-[clamp(7px,2.1cqw,10px)] italic opacity-70">
                 Choose any available space. Add your link. Pay once. Stay here permanently.
               </div>
             </header>
           ) : (
-            <header className="flex items-baseline justify-between border-b border-[#191627]/30 pb-[1%] font-data text-[0.62vw] font-bold uppercase tracking-[0.25em] text-[#191627]/60 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/50 sm:text-[9px]">
+            <header className="flex items-baseline justify-between border-b border-[#191627]/30 pb-[1%] font-data text-[clamp(6px,2cqw,9px)] font-bold uppercase tracking-[0.25em] text-[#191627]/60 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/50">
               <span>Pixel Paper</span>
               <span>Page {pageNumber}</span>
             </header>
@@ -452,17 +452,17 @@ export const NewspaperPage: React.FC<NewspaperPageProps> = ({
 
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center opacity-[0.06] dark:opacity-[0.1]">
-                <div className="font-masthead text-[3vw] font-black uppercase leading-none">
+                <div className="font-masthead text-[clamp(20px,8cqw,42px)] font-black uppercase leading-none">
                   {fmtPixels(totalPagePixels)}
                 </div>
-                <div className="font-data text-[0.8vw] font-bold uppercase tracking-[0.4em]">
+                <div className="font-data text-[clamp(7px,2.2cqw,10px)] font-bold uppercase tracking-[0.4em]">
                   pixels
                 </div>
               </div>
             </div>
           </div>
 
-          <footer className="flex items-baseline justify-between border-t border-[#191627]/30 pt-[1%] font-data text-[0.6vw] uppercase tracking-[0.2em] text-[#191627]/50 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/40 sm:text-[8px]">
+          <footer className="flex items-baseline justify-between border-t border-[#191627]/30 pt-[1%] font-data text-[clamp(6px,1.8cqw,8px)] uppercase tracking-[0.2em] text-[#191627]/50 dark:border-[#f2f0fb]/20 dark:text-[#f2f0fb]/40">
             <span>
               {config.pageWidth} × {config.pageHeight} px
             </span>

@@ -68,6 +68,12 @@ export interface NewspaperStats {
   totalPixels: number;
 }
 
+/** POST /api/viewers/heartbeat */
+export interface VisitorStats {
+  liveVisitors: number;
+  visitors24h: number;
+}
+
 /** GET /api/newspaper */
 export interface NewspaperState {
   occupied: OccupiedArea[];

@@ -20,6 +20,11 @@ import type { PoolClient } from 'pg';
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import type { Rect } from '../shared/pricing.ts';
+import {
+  LIVE_VISITOR_WINDOW_SECONDS,
+  VISITOR_24H_WINDOW_SECONDS,
+  type VisitorStats,
+} from '../shared/visitor.ts';
 import { lockPage, query, withTransaction } from './db.ts';
 
 /** PostgreSQL SQLSTATE for a violated exclusion constraint. */
@@ -239,6 +244,35 @@ export async function getStats(): Promise<NewspaperStats> {
     claimedPixels: Number(rows[0]?.claimed_pixels ?? 0),
     totalPixels: config.pageWidth * config.pageHeight * config.totalPages,
   };
+}
+
+/** Touch one anonymous reader session and return the current presence totals. */
+export async function recordVisitorHeartbeat(visitorId: string): Promise<VisitorStats> {
+  return withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO visitor_sessions (visitor_id)
+       VALUES ($1)
+       ON CONFLICT (visitor_id) DO UPDATE
+         SET last_seen_at = now()`,
+      [visitorId]
+    );
+
+    const result = await client.query<{ live_visitors: number; visitors_24h: number }>(
+      `SELECT
+         (SELECT count(*)::int
+            FROM visitor_sessions
+           WHERE last_seen_at >= now() - ($1 * interval '1 second')) AS live_visitors,
+         (SELECT count(*)::int
+            FROM visitor_sessions
+           WHERE last_seen_at >= now() - ($2 * interval '1 second')) AS visitors_24h`,
+      [LIVE_VISITOR_WINDOW_SECONDS, VISITOR_24H_WINDOW_SECONDS]
+    );
+
+    return {
+      liveVisitors: Number(result.rows[0]?.live_visitors ?? 0),
+      visitors24h: Number(result.rows[0]?.visitors_24h ?? 0),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

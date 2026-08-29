@@ -37,9 +37,10 @@ import type {
   PlacedAd,
   Rect,
   SiteConfig,
+  VisitorStats,
 } from './types.ts';
 import { ApiError } from './types.ts';
-import { fetchConfig, fetchNewspaper, postQuote } from './lib/api.ts';
+import { fetchConfig, fetchNewspaper, postQuote, postVisitorHeartbeat } from './lib/api.ts';
 import { firstBlocker, usd } from './lib/selection.ts';
 import { buildDemoPaper, DEMO_PAGE } from './lib/demoPaper.ts';
 import { AboutView } from './components/AboutView.tsx';
@@ -117,6 +118,7 @@ export default function App() {
   // ---- What the server says -----------------------------------------------
   const [config, setConfig] = useState<SiteConfig | null>(null);
   const [paper, setPaper] = useState<NewspaperState | null>(null);
+  const [visitorStats, setVisitorStats] = useState<VisitorStats | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
 
   // ---- What the reader is doing --------------------------------------------
@@ -190,6 +192,29 @@ export default function App() {
       abandoned = true;
     };
   }, []);
+
+  /** Keep the public reader count fresh without affecting the reading flow. */
+  useEffect(() => {
+    if (!config?.readiness.database) return;
+
+    let abandoned = false;
+    const beat = async () => {
+      try {
+        const nextStats = await postVisitorHeartbeat();
+        if (!abandoned) setVisitorStats(nextStats);
+      } catch {
+        // Reader activity is supplementary; a failed heartbeat must not affect reading or checkout.
+      }
+    };
+
+    void beat();
+    const heartbeat = window.setInterval(() => void beat(), REFRESH_MS);
+
+    return () => {
+      abandoned = true;
+      window.clearInterval(heartbeat);
+    };
+  }, [config?.readiness.database]);
 
   /** Keep availability roughly current without hammering the server. */
   useEffect(() => {
@@ -456,6 +481,7 @@ export default function App() {
     <RightContextPanel
       config={pricing}
       stats={activePaper.stats}
+      visitorStats={visitorStats}
       selection={selection}
       isSelectMode={isSelectMode}
       showPriceMap={showPriceMap}
@@ -495,7 +521,7 @@ export default function App() {
               className="shrink-0 transition-transform group-hover:scale-110"
               aria-hidden
             />
-            <PixelWordmark size="text-base sm:text-lg" />
+            <PixelWordmark size="text-base sm:text-lg" className="hidden min-[360px]:inline" />
           </button>
         </div>
 

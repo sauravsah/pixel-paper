@@ -276,4 +276,17 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   type         TEXT NOT NULL,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- ---------------------------------------------------------------------------
+-- visitor_sessions — anonymous presence only, no IP or personal data.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS visitor_sessions (
+  visitor_id    UUID PRIMARY KEY,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS visitor_sessions_last_seen_idx
+  ON visitor_sessions (last_seen_at);
 `;

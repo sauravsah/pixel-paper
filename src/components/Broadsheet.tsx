@@ -147,13 +147,30 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
   onToggleImmersive,
 }) => {
   const [flip, setFlip] = useState<Flip | null>(null);
+  const [mobilePage, setMobilePage] = useState(1);
   const flipping = flip !== null;
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const views = buildViews(config.totalPages);
   const viewCount = views.length;
 
+  useEffect(() => {
+    const mobileView = buildViews(config.totalPages)[view];
+    setMobilePage(mobileView?.left ?? mobileView?.right ?? 1);
+  }, [config.totalPages, view]);
+
   const canBack = view > 0;
   const canForward = view < viewCount - 1;
+
+  const turnMobile = useCallback(
+    (direction: 'forward' | 'backward') => {
+      const nextPage = mobilePage + (direction === 'forward' ? 1 : -1);
+      if (nextPage < 1 || nextPage > config.totalPages) return;
+
+      setMobilePage(nextPage);
+      onViewChange(nextPage === 1 ? 0 : Math.floor((nextPage - 2) / 2) + 1);
+    },
+    [config.totalPages, mobilePage, onViewChange]
+  );
 
   const turn = useCallback(
     (direction: 'forward' | 'backward') => {
@@ -245,7 +262,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
   return (
     <div className="relative w-full">
       <div
-        className={`mx-auto w-full px-1 sm:px-3 ${immersive ? '' : 'max-w-[1600px]'}`}
+        className={`mx-auto hidden w-full px-1 sm:block sm:px-3 ${immersive ? '' : 'max-w-[1600px]'}`}
         style={
           immersive
             ? {
@@ -411,7 +428,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
 
       {/* Position, and a tappable target for phones where the edge arrows are
           hidden. */}
-      <div className="mt-4 flex items-center justify-center gap-3">
+      <div className="mt-4 hidden items-center justify-center gap-3 sm:flex">
         <button
           type="button"
           onClick={() => turn('backward')}
@@ -474,6 +491,78 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
             {immersive ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
         )}
+      </div>
+
+      {/* On phones, one page at a time keeps the publication readable. The
+          desktop spread remains the richer physical turn experience above. */}
+      <div className="mx-auto w-full max-w-[520px] px-3 sm:hidden">
+        <div
+          className="relative w-full overflow-hidden"
+          style={{ aspectRatio: `${config.pageWidth} / ${config.pageHeight}` }}
+          onTouchStart={(event) => {
+            if (isSelectMode || event.touches.length > 1) {
+              touchStart.current = null;
+              return;
+            }
+            const t = event.touches[0];
+            touchStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+          }}
+          onTouchEnd={(event) => {
+            const start = touchStart.current;
+            const t = event.changedTouches[0];
+            touchStart.current = null;
+            if (!start || !t) return;
+
+            const dx = t.clientX - start.x;
+            const dy = t.clientY - start.y;
+            if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
+            turnMobile(dx < 0 ? 'forward' : 'backward');
+          }}
+        >
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              key={mobilePage}
+              className="absolute inset-0"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              {renderPage(mobilePage, { selectable: true, isCover: mobilePage === 1 })}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => turnMobile('backward')}
+            disabled={mobilePage === 1}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dcd6ec] bg-[#faf9fe] text-[#191627] disabled:opacity-30 dark:border-[#2a2740] dark:bg-[#131120] dark:text-[#f2f0fb]"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          <div className="min-w-0 text-center" aria-live="polite">
+            <div className="font-data text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f6a80] dark:text-[#a49eb6]">
+              Page {mobilePage} of {config.totalPages}
+            </div>
+            <div className="mt-0.5 font-editorial text-[10px] italic text-[#6f6a80] dark:text-zinc-500">
+              Swipe to turn the page
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => turnMobile('forward')}
+            disabled={mobilePage === config.totalPages}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dcd6ec] bg-[#faf9fe] text-[#191627] disabled:opacity-30 dark:border-[#2a2740] dark:bg-[#131120] dark:text-[#f2f0fb]"
+            aria-label="Next page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

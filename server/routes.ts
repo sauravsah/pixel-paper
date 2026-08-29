@@ -24,6 +24,7 @@ import { createCheckoutSession, isDodoConfigured, isTestMode, isWebhookConfigure
 import { validateAdSubmission } from './validation.ts';
 import { moderateAdSubmission } from './moderation.ts';
 import { clientIp, createRateLimiter } from './rate-limit.ts';
+import { ensureVisitorId } from './visitor.ts';
 
 /** Booking ids are uuids. Anything else is a bad link, not a server fault. */
 const UUID_PATTERN =
@@ -41,6 +42,13 @@ const checkoutLimiter = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: 20,
   exemptLoopback: true,
+});
+
+/** Keep a noisy anonymous heartbeat from inflating the reader count. */
+const visitorHeartbeatLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  exemptLoopback: false,
 });
 
 /**
@@ -132,6 +140,33 @@ export function createApiRouter(): Router {
   // -------------------------------------------------------------------------
   // The newspaper
   // -------------------------------------------------------------------------
+
+  /** Record an anonymous reader heartbeat and return live/24-hour totals. */
+  router.post('/viewers/heartbeat', async (req: Request, res: Response) => {
+    if (!requireDatabase(res)) return;
+
+    const limit = visitorHeartbeatLimiter.check(clientIp(req));
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfterSec));
+      res.status(429).json({
+        error: 'rate-limited',
+        message: 'Reader activity is updating too quickly. Please try again shortly.',
+      });
+      return;
+    }
+
+    try {
+      const stats = await repo.recordVisitorHeartbeat(ensureVisitorId(req, res));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(stats);
+    } catch (err: any) {
+      console.error('[api] POST /viewers/heartbeat failed:', err.message);
+      res.status(500).json({
+        error: 'server-error',
+        message: 'Could not update reader activity right now.',
+      });
+    }
+  });
 
   /**
    * One request returns the whole readable state: which areas are taken, and

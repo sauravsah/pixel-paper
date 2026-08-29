@@ -3,8 +3,8 @@
  * ==============================
  *
  * The only place in the browser bundle that talks to the server. Everything the
- * interface knows about bookings, prices and availability arrives through one of
- * these six functions.
+ * interface knows about bookings, prices, availability and reader activity arrives
+ * through these request helpers.
  *
  * WHAT THIS FILE DELIBERATELY CANNOT DO
  * -------------------------------------
@@ -30,6 +30,7 @@ import type {
   Rect,
   SiteConfig,
   SpaceResponse,
+  VisitorStats,
 } from '../types.ts';
 import { ApiError } from '../types.ts';
 
@@ -87,6 +88,11 @@ export function fetchConfig(): Promise<SiteConfig> {
 /** Occupied areas, live advertisements, and claimed-pixel totals. */
 export function fetchNewspaper(): Promise<NewspaperState> {
   return request<NewspaperState>('/newspaper');
+}
+
+/** Record this anonymous reader's presence and return the current totals. */
+export function postVisitorHeartbeat(): Promise<VisitorStats> {
+  return request<VisitorStats>('/viewers/heartbeat', { method: 'POST' });
 }
 
 /**

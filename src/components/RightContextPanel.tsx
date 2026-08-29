@@ -16,12 +16,14 @@ import React, { useMemo } from 'react';
 import { ArrowRight, Info, Map, MousePointerClick } from 'lucide-react';
 
 import type { PricingConfig } from '../../shared/pricing-config.ts';
-import type { NewspaperStats, PixelSelection } from '../types.ts';
+import type { NewspaperStats, PixelSelection, VisitorStats } from '../types.ts';
 import { isBelowMinimum, pixels as fmtPixels, rate as fmtRate, usd } from '../lib/selection.ts';
+import { VisitorTracker } from './VisitorTracker.tsx';
 
 interface RightContextPanelProps {
   config: PricingConfig;
   stats: NewspaperStats;
+  visitorStats: VisitorStats | null;
   selection: PixelSelection | null;
   isSelectMode: boolean;
   showPriceMap: boolean;
@@ -34,6 +36,7 @@ interface RightContextPanelProps {
 export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   config,
   stats,
+  visitorStats,
   selection,
   isSelectMode,
   showPriceMap,
@@ -53,8 +56,10 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   );
 
   return (
-    <aside className="w-full border-l border-[#dcd6ec] bg-[#faf8ff] dark:border-[#232037] dark:bg-[#100e18] lg:w-60">
+    <aside className="w-full border-l-0 border-[#dcd6ec] bg-[#faf8ff] dark:border-[#232037] dark:bg-[#100e18] lg:w-60 lg:border-l">
       <div className="space-y-5 p-4 lg:p-5">
+        <VisitorTracker stats={visitorStats} />
+
         {/* ---- Price map: an overview tool, kept apart from the buy card ---- */}
         <div className="space-y-1.5">
           <button

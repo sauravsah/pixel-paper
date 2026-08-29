@@ -176,7 +176,8 @@ quote and a charge cannot drift apart.
 
 `server/` is a small Express application — `routes.ts` for the API, `dodo.ts`
 for checkout sessions, `webhook.ts` for confirmation, `repository.ts` for every
-query, and `schema.ts` for the tables. `src/` is the React client, with
+query, `visitor.ts` for anonymous reader identity, and `schema.ts` for the tables.
+`src/` is the React client, with
 `Broadsheet.tsx` turning pages, `NewspaperPage.tsx` handling selection and
 rendering, and the rest being chrome.
 
@@ -189,6 +190,7 @@ charge all move together.
 | --- | --- |
 | `GET /api/config` | Pricing rules, the price map, and which credentials the server actually has |
 | `GET /api/newspaper` | Occupied areas, live advertisements, claimed-pixel totals |
+| `POST /api/viewers/heartbeat` | Anonymous live and last-24-hour reader totals |
 | `POST /api/quote` | The authoritative price for a rectangle, and whether it is free |
 | `POST /api/checkout` | Validates, prices, creates a pending booking, returns a Dodo checkout URL |
 | `GET /api/checkout/status` | Reports what the database says about a booking |
