@@ -25,6 +25,10 @@ import DodoPayments from 'dodopayments';
 import { Webhook } from 'standardwebhooks';
 
 import { env } from './env.ts';
+import {
+  hasVerifiedFullDiscountEvidence,
+  TransientProviderLookupError,
+} from './payment-validation.ts';
 import type { BookingRecord } from './repository.ts';
 
 /**
@@ -43,6 +47,39 @@ export function isWebhookConfigured(): boolean {
 /** True unless the environment is explicitly set to live mode. */
 export function isTestMode(): boolean {
   return env.dodoEnvironment !== 'live_mode';
+}
+
+/**
+ * Validate a zero-value payment's discount using only Dodo data. The webhook
+ * handler calls this after signature verification; the legacy id fallback is
+ * resolved with the server-side Dodo client, never from browser input.
+ */
+export async function hasVerifiedFullDiscount(
+  data: Record<string, unknown>,
+  paymentTimeMs: number
+): Promise<boolean> {
+  if (!env.dodoProductId || !Number.isFinite(paymentTimeMs)) return false;
+
+  return hasVerifiedFullDiscountEvidence(
+    data,
+    env.dodoProductId,
+    async (discountId) => {
+      try {
+        return await dodo().discounts.retrieve(discountId);
+      } catch (error) {
+        // A not-found or malformed id is invalid discount evidence and can be
+        // acknowledged normally. Auth, rate-limit, network and server errors
+        // must remain retryable so a real discount is not lost permanently.
+        const status =
+          typeof (error as { status?: unknown })?.status === 'number'
+            ? (error as { status: number }).status
+            : null;
+        if (status === 400 || status === 404 || status === 422) return null;
+        throw new TransientProviderLookupError(error);
+      }
+    },
+    paymentTimeMs
+  );
 }
 
 // The client is created once, on first use, and reused thereafter.
@@ -155,12 +192,54 @@ export function constructWebhookEvent(
   return webhook.verify(rawBody, headers) as DodoWebhookEvent;
 }
 
+export interface RefundPaymentSnapshot {
+  refund_status?: 'partial' | 'full' | null;
+  refunds?: Array<{
+    status?: 'succeeded' | 'failed' | 'pending' | 'review' | null;
+    is_partial?: boolean | null;
+  }>;
+}
+
+/** The subset of the Dodo client needed by the refund recovery path. */
+export interface RefundProvider {
+  payments: {
+    retrieve(paymentId: string): Promise<RefundPaymentSnapshot>;
+  };
+  refunds: {
+    create(body: { payment_id: string }): Promise<unknown>;
+  };
+}
+
+function hasExistingFullRefund(payment: RefundPaymentSnapshot): boolean {
+  if (payment.refund_status === 'full') return true;
+
+  return Boolean(
+    payment.refunds?.some(
+      (refund) =>
+        refund.is_partial === false &&
+        (refund.status === 'succeeded' ||
+          refund.status === 'pending' ||
+          refund.status === 'review')
+    )
+  );
+}
+
 /**
- * Refund a payment in full.
- *
- * Used when a payment lands on pixels another buyer's confirmed payment already
- * took — nobody keeps money for pixels they did not get.
+ * Refund a payment in full without relying on the installed SDK's ineffective
+ * idempotencyKey option. Dodo exposes the payment's refund state, so retries
+ * first ask the provider whether a full or in-flight refund already exists.
+ * Callers serialize this operation per payment with a transaction-scoped lock.
  */
+export async function refundPaymentIfNeeded(
+  paymentId: string,
+  provider: RefundProvider
+): Promise<void> {
+  const payment = await provider.payments.retrieve(paymentId);
+  if (hasExistingFullRefund(payment)) return;
+
+  await provider.refunds.create({ payment_id: paymentId });
+}
+
 export async function refundPayment(paymentId: string): Promise<void> {
-  await dodo().refunds.create({ payment_id: paymentId });
+  await refundPaymentIfNeeded(paymentId, dodo());
 }

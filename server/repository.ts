@@ -16,7 +16,7 @@
  *      browser can reach writes that value.
  */
 
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import type { Rect } from '../shared/pricing.ts';
@@ -25,7 +25,7 @@ import {
   VISITOR_24H_WINDOW_SECONDS,
   type VisitorStats,
 } from '../shared/visitor.ts';
-import { lockPage, query, withTransaction } from './db.ts';
+import { getPool, lockPage, query, withTransaction } from './db.ts';
 
 /** PostgreSQL SQLSTATE for a violated exclusion constraint. */
 const EXCLUSION_VIOLATION = '23P01';
@@ -448,24 +448,29 @@ export async function attachCheckoutSession(
 }
 
 /** Give the pixels straight back when a session could not be created. */
-export async function cancelBooking(bookingId: string): Promise<void> {
-  await query(
-    `UPDATE pixel_bookings
+export async function cancelBooking(bookingId: string, client?: PoolClient): Promise<void> {
+  const sql = `UPDATE pixel_bookings
         SET status = 'cancelled', updated_at = now()
-      WHERE id = $1 AND status = 'pending'`,
-    [bookingId]
-  );
+      WHERE id = $1 AND status = 'pending'`;
+  if (client) {
+    await client.query(sql, [bookingId]);
+    return;
+  }
+  await query(sql, [bookingId]);
 }
 
 // ---------------------------------------------------------------------------
 // Lookups
 // ---------------------------------------------------------------------------
 
-export async function getBookingById(bookingId: string): Promise<BookingRecord | null> {
-  const rows = await query<Record<string, any>>(
-    `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE id = $1`,
-    [bookingId]
-  );
+export async function getBookingById(
+  bookingId: string,
+  client?: PoolClient
+): Promise<BookingRecord | null> {
+  const sql = `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE id = $1`;
+  const rows = client
+    ? (await client.query<Record<string, any>>(sql, [bookingId])).rows
+    : await query<Record<string, any>>(sql, [bookingId]);
   return rows[0] ? toBooking(rows[0]) : null;
 }
 
@@ -503,37 +508,120 @@ export async function getAdForBooking(bookingId: string): Promise<AdContent | nu
 // Webhook idempotency
 // ---------------------------------------------------------------------------
 
-/**
- * Claim a webhook event id.
- *
- * Returns true the first time an event is seen and false for every replay, so
- * the handler can return 200 immediately without repeating any work. Dodo
- * retries aggressively and can deliver the same event more than once even
- * without a failure, so this is a normal path, not an error path.
- */
-export async function claimWebhookEvent(
-  eventId: string,
-  eventType: string
-): Promise<boolean> {
-  const rows = await query<{ id: string }>(
-    `INSERT INTO webhook_events (id, type)
-     VALUES ($1, $2)
-     ON CONFLICT (id) DO NOTHING
-     RETURNING id`,
-    [eventId, eventType]
-  );
-  return rows.length > 0;
+export interface WebhookEventClaim {
+  /** True only for the transaction that inserted this event id. */
+  firstTime: boolean;
+  /** The same transaction client, used for all webhook database work. */
+  client: PoolClient;
+  /** Commit the claim after event processing has completed successfully. */
+  commit(): Promise<void>;
+  /** Roll back the claim so the provider can retry after processing fails. */
+  release(): Promise<void>;
+}
+
+type WebhookClaimPool = Pick<Pool, 'connect'>;
+
+function destroyClaimClient(client: PoolClient): void {
+  try {
+    // Destroying a client with an open transaction causes PostgreSQL to roll it
+    // back, which is the last-resort guarantee against a stuck claim.
+    client.release(true);
+  } catch {
+    // pg's release is normally non-throwing. There is no further cleanup
+    // possible if the client itself cannot be released.
+  }
 }
 
 /**
- * Give a claimed event id back after the handler failed.
+ * Claim a webhook event id in a transaction held through event processing.
  *
- * Without this, a handler that throws would have already consumed the event id,
- * and Dodo's retry would be waved through as a duplicate — turning a
- * transient error into a permanently lost payment confirmation.
+ * The unique-key conflict intentionally waits for the first transaction to
+ * commit or roll back. A duplicate therefore cannot be acknowledged while the
+ * original is still running, and a failed original leaves the id retryable.
+ * `poolOverride` is only used by pure tests; production uses the application
+ * pool returned by `getPool()`.
  */
-export async function releaseWebhookEvent(eventId: string): Promise<void> {
-  await query('DELETE FROM webhook_events WHERE id = $1', [eventId]);
+export async function claimWebhookEvent(
+  eventId: string,
+  eventType: string,
+  poolOverride?: WebhookClaimPool
+): Promise<WebhookEventClaim> {
+  const client = await (poolOverride ?? getPool()).connect();
+  let state: 'open' | 'committed' | 'released' = 'open';
+
+  const closeClient = (destroy = false): void => {
+    try {
+      client.release(destroy);
+    } catch (error) {
+      if (!destroy) destroyClaimClient(client);
+      throw error;
+    }
+  };
+
+  try {
+    await client.query('BEGIN');
+    const result = await client.query<{ id: string }>(
+      `INSERT INTO webhook_events (id, type)
+       VALUES ($1, $2)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      [eventId, eventType]
+    );
+
+    const claim: WebhookEventClaim = {
+      firstTime: result.rows.length > 0,
+      client,
+
+      async commit(): Promise<void> {
+        if (state !== 'open') return;
+
+        try {
+          await client.query('COMMIT');
+          state = 'committed';
+          closeClient();
+        } catch (error) {
+          state = 'released';
+          // The commit outcome may be uncertain. Destroying the client prevents
+          // reuse of a possibly broken connection and lets retries reconcile via
+          // the booking/order idempotency constraints.
+          destroyClaimClient(client);
+          throw error;
+        }
+      },
+
+      async release(): Promise<void> {
+        if (state !== 'open') return;
+
+        try {
+          await client.query('ROLLBACK');
+          state = 'released';
+          closeClient();
+        } catch (error) {
+          state = 'released';
+          // If rollback failed, force-close the connection. PostgreSQL will roll
+          // back the open transaction as the session disappears.
+          destroyClaimClient(client);
+          throw error;
+        }
+      },
+    };
+
+    return claim;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      destroyClaimClient(client);
+      throw error;
+    }
+
+    try {
+      closeClient();
+    } catch {
+      destroyClaimClient(client);
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -569,11 +657,14 @@ export interface MarkPaidInput {
  * back either way. Reporting it as an error instead would leave Dodo retrying
  * an event that can never succeed while holding a charge nobody can honour.
  */
-export async function markBookingPaid(input: MarkPaidInput): Promise<PaymentOutcome> {
+export async function markBookingPaid(
+  input: MarkPaidInput,
+  transactionClient?: PoolClient
+): Promise<PaymentOutcome> {
   try {
-    return await markBookingPaidInTransaction(input);
+    return await markBookingPaidInTransaction(input, transactionClient);
   } catch (err: any) {
-    if (!err?.isOverlap || !err?.bookingId) throw err;
+    if (transactionClient || !err?.isOverlap || !err?.bookingId) throw err;
 
     // The transaction that hit the constraint is already dead, so the booking is
     // cancelled here, in its own statement, outside it.
@@ -589,8 +680,11 @@ export async function markBookingPaid(input: MarkPaidInput): Promise<PaymentOutc
   }
 }
 
-async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<PaymentOutcome> {
-  return withTransaction(async (client) => {
+async function markBookingPaidInTransaction(
+  input: MarkPaidInput,
+  transactionClient?: PoolClient
+): Promise<PaymentOutcome> {
+  const run = async (client: PoolClient): Promise<PaymentOutcome> => {
     const existing = await client.query<Record<string, any>>(
       `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE id = $1 FOR UPDATE`,
       [input.bookingId]
@@ -623,6 +717,9 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
       return { outcome: 'conflict', booking, conflict };
     }
 
+    const savepoint = transactionClient ? 'SAVEPOINT pixel_press_paid_write' : null;
+    if (savepoint) await client.query(savepoint);
+
     try {
       const updated = await client.query<Record<string, any>>(
         `UPDATE pixel_bookings
@@ -644,6 +741,10 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
       // a no-op via ON CONFLICT rather than a second order row.
       const orderKey = paid.stripeSessionId ?? input.paymentId ?? paid.id;
 
+      // pixel_bookings.amount_cents is the original/list amount. The existing
+      // order amount fields record the product amount after an approved
+      // discount, so a valid 100% discount is explicit as zero paid and the
+      // discount is derivable as booking amount minus order amount.
       await client.query(
         `INSERT INTO orders
            (booking_id, stripe_session_id, stripe_payment_intent_id,
@@ -661,9 +762,29 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
         ]
       );
 
+      if (savepoint) await client.query('RELEASE SAVEPOINT pixel_press_paid_write');
       return { outcome: 'paid', booking: paid };
     } catch (err: any) {
       if (err?.code === EXCLUSION_VIOLATION) {
+        if (savepoint) {
+          await client.query('ROLLBACK TO SAVEPOINT pixel_press_paid_write');
+          await client.query(
+            `UPDATE pixel_bookings
+                SET status = 'cancelled', updated_at = now()
+              WHERE id = $1 AND status <> 'paid'`,
+            [booking.id]
+          );
+          const cancelled = await client.query<Record<string, any>>(
+            `SELECT ${BOOKING_COLUMNS} FROM pixel_bookings WHERE id = $1`,
+            [booking.id]
+          );
+          return {
+            outcome: 'conflict',
+            booking: cancelled.rows[0] ? toBooking(cancelled.rows[0]) : booking,
+            conflict,
+          };
+        }
+
         // The database refused the overlap. This is the guarantee working.
         throw Object.assign(
           new Error('overlap-rejected-by-database'),
@@ -672,7 +793,9 @@ async function markBookingPaidInTransaction(input: MarkPaidInput): Promise<Payme
       }
       throw err;
     }
-  });
+  };
+
+  return transactionClient ? run(transactionClient) : withTransaction(run);
 }
 
 export interface RefundRecord {
@@ -693,24 +816,30 @@ export interface RefundRecord {
  * all. The row is written here instead, already marked refunded, so the money in
  * and the money out are both accounted for.
  */
-export async function recordRefundedOrder(input: RefundRecord): Promise<void> {
-  await query(
-    `INSERT INTO orders
+export async function recordRefundedOrder(
+  input: RefundRecord,
+  client?: PoolClient
+): Promise<void> {
+  const sql = `INSERT INTO orders
        (booking_id, stripe_session_id, stripe_payment_intent_id,
         amount, amount_cents, currency, status, buyer_email)
      VALUES ($1, $2, $3, $4, $5, $6, 'refunded', $7)
      ON CONFLICT (stripe_session_id)
        DO UPDATE SET status = 'refunded',
                      stripe_payment_intent_id =
-                       COALESCE(EXCLUDED.stripe_payment_intent_id, orders.stripe_payment_intent_id)`,
-    [
-      input.bookingId,
-      input.sessionId,
-      input.paymentIntentId,
-      input.amountCents / 100,
-      input.amountCents,
-      input.currency,
-      input.buyerEmail,
-    ]
-  );
+                       COALESCE(EXCLUDED.stripe_payment_intent_id, orders.stripe_payment_intent_id)`;
+  const params = [
+    input.bookingId,
+    input.sessionId,
+    input.paymentIntentId,
+    input.amountCents / 100,
+    input.amountCents,
+    input.currency,
+    input.buyerEmail,
+  ];
+  if (client) {
+    await client.query(sql, params);
+    return;
+  }
+  await query(sql, params);
 }

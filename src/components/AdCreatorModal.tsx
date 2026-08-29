@@ -882,7 +882,26 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-col items-center justify-between gap-3 border-t-2 border-[#191627] pt-4 dark:border-[#332f45] sm:flex-row">
+            <div className="space-y-3">
+              <p className="text-center font-data text-[10px] leading-relaxed text-[#6f6a80] dark:text-zinc-500">
+                By continuing, you agree to the{' '}
+                <a
+                  href="/terms"
+                  className="font-bold text-[#514c62] underline underline-offset-2 hover:text-[#7c3aed] dark:text-zinc-300 dark:hover:text-[#a78bfa]"
+                >
+                  Pixel Paper Terms
+                </a>{' '}
+                and{' '}
+                <a
+                  href="/refunds"
+                  className="font-bold text-[#514c62] underline underline-offset-2 hover:text-[#7c3aed] dark:text-zinc-300 dark:hover:text-[#a78bfa]"
+                >
+                  Refund Policy
+                </a>
+                .
+              </p>
+
+              <div className="flex flex-col items-center justify-between gap-3 border-t-2 border-[#191627] pt-4 dark:border-[#332f45] sm:flex-row">
               <button
                 type="button"
                 onClick={() => setStep('create')}
@@ -910,6 +929,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                   </>
                 )}
               </button>
+              </div>
             </div>
           </div>
         )}

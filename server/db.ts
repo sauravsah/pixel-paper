@@ -125,6 +125,18 @@ export async function lockPage(client: PoolClient, pageNumber: number): Promise<
 }
 
 /**
+ * Serialize refund attempts for one provider payment. The lock is held only for
+ * the surrounding transaction, so a retry can inspect provider state after an
+ * earlier attempt has committed or the connection has been released.
+ */
+export async function lockRefund(client: PoolClient, paymentId: string): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [
+    ADVISORY_LOCK_NAMESPACE,
+    paymentId,
+  ]);
+}
+
+/**
  * Create the schema and seed the six pages.
  *
  * Safe to run on every boot: the schema is written to be idempotent, and the

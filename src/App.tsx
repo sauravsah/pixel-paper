@@ -662,6 +662,32 @@ export default function App() {
         <div className="hidden shrink-0 overflow-y-auto lg:block">{panel}</div>
       </div>
 
+      <footer className="border-t border-[#dcd6ec] px-4 py-4 dark:border-[#232037] sm:px-6">
+        <div className="flex flex-col items-center justify-between gap-3 font-data text-[10px] uppercase tracking-wider text-[#6f6a80] sm:flex-row dark:text-zinc-500">
+          <span>Pixel Paper · an independent digital project</span>
+          <nav aria-label="Legal" className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+            <a
+              href="/terms"
+              className="font-bold underline-offset-4 hover:text-[#7c3aed] hover:underline dark:hover:text-[#a78bfa]"
+            >
+              Terms
+            </a>
+            <a
+              href="/privacy"
+              className="font-bold underline-offset-4 hover:text-[#7c3aed] hover:underline dark:hover:text-[#a78bfa]"
+            >
+              Privacy
+            </a>
+            <a
+              href="/refunds"
+              className="font-bold underline-offset-4 hover:text-[#7c3aed] hover:underline dark:hover:text-[#a78bfa]"
+            >
+              Refunds
+            </a>
+          </nav>
+        </div>
+      </footer>
+
       {/* ==================================================================
           A SELECTION, ALWAYS REACHABLE ON MOBILE
           ================================================================== */}

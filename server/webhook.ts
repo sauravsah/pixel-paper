@@ -26,15 +26,21 @@
  */
 
 import type { Request, Response } from 'express';
+import type { PoolClient } from 'pg';
 
 import * as repo from './repository.ts';
-import { isDatabaseConfigured } from './db.ts';
+import { isDatabaseConfigured, lockRefund } from './db.ts';
 import {
   constructWebhookEvent,
+  hasVerifiedFullDiscount,
   isWebhookConfigured,
   refundPayment,
   type DodoWebhookEvent,
 } from './dodo.ts';
+import {
+  isProviderAmountAcceptable,
+  paymentAmountsForOrder,
+} from './payment-validation.ts';
 
 /** Events this handler acts on. Anything else is acknowledged and ignored. */
 const HANDLED_EVENTS = new Set(['payment.succeeded', 'payment.failed']);
@@ -97,38 +103,42 @@ export async function handleDodoWebhook(req: Request, res: Response): Promise<vo
   // `webhook-id` is stable per delivery, so it is the key. Dodo retries and can
   // deliver the same event more than once even without a failure, so this is a
   // normal path, not an error path.
-  let firstTime: boolean;
+  let claim: repo.WebhookEventClaim;
   try {
-    firstTime = await repo.claimWebhookEvent(webhookId, event.type);
+    claim = await repo.claimWebhookEvent(webhookId, event.type);
   } catch (err: any) {
     console.error('[webhook] could not record event id:', err.message);
     res.status(500).send('Could not record event');
     return;
   }
 
-  if (!firstTime) {
+  if (!claim.firstTime) {
     console.log(`[webhook] ${webhookId} (${event.type}) already handled; ignoring replay.`);
-    res.json({ received: true, duplicate: true });
+    try {
+      await claim.commit();
+      res.json({ received: true, duplicate: true });
+    } catch (err: any) {
+      console.error('[webhook] could not finish duplicate claim:', err.message);
+      res.status(500).send('Could not record event');
+    }
     return;
   }
 
   try {
-    switch (event.type) {
-      case 'payment.succeeded':
-        await onPaymentSucceeded(event.data);
-        break;
+    await processClaimedWebhook(claim, async () => {
+      switch (event.type) {
+        case 'payment.succeeded':
+          await onPaymentSucceeded(event.data, event.timestamp, claim.client);
+          break;
 
-      case 'payment.failed':
-        await onPaymentFailed(event.data);
-        break;
-    }
-
+        case 'payment.failed':
+          await onPaymentFailed(event.data, claim.client);
+          break;
+      }
+    });
     res.json({ received: true });
   } catch (err: any) {
     console.error(`[webhook] handling ${event.type} failed:`, err.message);
-    // 500 asks Dodo to retry. The event id was already claimed, so the retry
-    // would be skipped as a duplicate — release it so the retry can do the work.
-    await repo.releaseWebhookEvent(webhookId).catch(() => undefined);
     res.status(500).send('Handler error');
   }
 }
@@ -139,7 +149,74 @@ function bookingIdFrom(data: Record<string, any>): string | null {
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
-async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
+function providerPaymentTimeMs(
+  data: Record<string, any>,
+  eventTimestamp?: string
+): number | undefined {
+  for (const value of [data.created_at, eventTimestamp]) {
+    if (typeof value !== 'string') continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+export interface ConflictRefundOperations {
+  lockRefund: (transactionClient: PoolClient, paymentId: string) => Promise<void>;
+  refundPayment: (paymentId: string) => Promise<void>;
+  recordRefundedOrder: (
+    input: repo.RefundRecord,
+    transactionClient: PoolClient
+  ) => Promise<void>;
+}
+
+/**
+ * Complete a conflict refund before the webhook claim can commit. Both the
+ * provider refund and its durable order record are deliberately allowed to
+ * throw. The caller then rolls back the claim and returns HTTP 500 for retry.
+ */
+export async function processConflictRefund(
+  paymentId: string,
+  refundRecord: repo.RefundRecord,
+  transactionClient: PoolClient,
+  operations: ConflictRefundOperations = {
+    lockRefund,
+    refundPayment,
+    recordRefundedOrder: (input, client) => repo.recordRefundedOrder(input, client),
+  }
+): Promise<void> {
+  await operations.lockRefund(transactionClient, paymentId);
+  await operations.refundPayment(paymentId);
+  await operations.recordRefundedOrder(refundRecord, transactionClient);
+}
+
+/**
+ * Keep the event claim open until all event work has completed. A failed
+ * processor or commit is never acknowledged; release failures are logged but
+ * still leave the request failed so the provider can retry.
+ */
+export async function processClaimedWebhook(
+  claim: Pick<repo.WebhookEventClaim, 'commit' | 'release'>,
+  process: () => Promise<void>
+): Promise<void> {
+  try {
+    await process();
+    await claim.commit();
+  } catch (error) {
+    try {
+      await claim.release();
+    } catch (releaseError: any) {
+      console.error('[webhook] could not release failed event claim:', releaseError?.message);
+    }
+    throw error;
+  }
+}
+
+async function onPaymentSucceeded(
+  data: Record<string, any>,
+  eventTimestamp: string | undefined,
+  transactionClient: PoolClient
+): Promise<void> {
   const bookingId = bookingIdFrom(data);
   if (!bookingId) {
     console.error('[webhook] payment.succeeded carried no bookingId in its metadata.');
@@ -148,7 +225,7 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
 
   const paymentId = typeof data.payment_id === 'string' ? data.payment_id : null;
 
-  const booking = await repo.getBookingById(bookingId);
+  const booking = await repo.getBookingById(bookingId, transactionClient);
   if (!booking) {
     console.error(`[webhook] no booking for id ${bookingId}.`);
     return;
@@ -156,14 +233,20 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
 
   // Dodo is a merchant of record: the total it collects can include tax added on
   // top of our price, so the received amount must be at least what we charged,
-  // not exactly equal. A total *below* our price is the anomaly.
+  // not exactly equal. A total *below* our price is the anomaly, except for a
+  // zero total backed by Dodo's verified 100% product-valid discount evidence.
   //
   // Deliberately not auto-refunded. An unexplained shortfall is the one case
   // where this server does not know what actually happened, and guessing with
   // someone else's money is worse than stopping and saying so. The booking lapses
   // with its hold on its own; the payment needs a human.
   const amountReceived = Number(data.total_amount ?? 0);
-  if (!Number.isFinite(amountReceived) || amountReceived < booking.amountCents) {
+  const paymentTimeMs = providerPaymentTimeMs(data, eventTimestamp);
+  const validFullDiscount =
+    amountReceived === 0 &&
+    paymentTimeMs !== undefined &&
+    (await hasVerifiedFullDiscount(data, paymentTimeMs));
+  if (!isProviderAmountAcceptable(booking.amountCents, amountReceived, validFullDiscount)) {
     console.error(
       `[webhook] amount too low on payment ${paymentId} for booking ${bookingId}: ` +
         `Dodo reported ${amountReceived} but the booking is ${booking.amountCents}. ` +
@@ -172,6 +255,11 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
     );
     return;
   }
+
+  // The booking keeps the original/list amount. The existing order amount
+  // fields record what the provider actually collected; the discount is the
+  // difference between these linked records.
+  const recordedAmounts = paymentAmountsForOrder(booking.amountCents, validFullDiscount);
 
   const currency =
     typeof data.currency === 'string' && data.currency
@@ -185,12 +273,13 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
   const result = await repo.markBookingPaid({
     bookingId: booking.id,
     paymentId,
-    // The order records what this server priced, not the tax-inclusive total, so
-    // it reflects the sale. Any overage is Dodo's tax, not our revenue.
-    amountCents: booking.amountCents,
+    // The order records the product amount after an approved discount, while the
+    // booking retains the original/list amount. Any Dodo tax overage remains
+    // outside this product-price record.
+    amountCents: recordedAmounts.actualAmountCents,
     currency,
     buyerEmail,
-  });
+  }, transactionClient);
 
   switch (result.outcome) {
     case 'paid':
@@ -214,8 +303,7 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
 
       if (paymentId) {
         try {
-          await refundPayment(paymentId);
-          await repo.recordRefundedOrder({
+          await processConflictRefund(paymentId, {
             bookingId: result.booking.id,
             // Key the refund row off the same value the paid path would use.
             sessionId: result.booking.stripeSessionId ?? paymentId,
@@ -223,14 +311,15 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
             amountCents: amountReceived,
             currency,
             buyerEmail: result.booking.buyerEmail,
-          });
+          }, transactionClient);
           console.log(`[webhook] refunded ${paymentId} in full.`);
         } catch (refundErr: any) {
-          // Loud, because a human now needs to refund this by hand.
+          // Loud and rethrown: the outer handler must roll back the claim and
+          // return 500 so the provider can retry the durable refund record.
           console.error(
-            `[webhook] REFUND FAILED for ${paymentId}: ${refundErr.message}. ` +
-              `Refund this payment manually in the Dodo dashboard.`
+            `[webhook] REFUND PROCESSING FAILED for ${paymentId}: ${refundErr.message}.`
           );
+          throw refundErr;
         }
       } else {
         console.error(
@@ -247,17 +336,20 @@ async function onPaymentSucceeded(data: Record<string, any>): Promise<void> {
   }
 }
 
-async function onPaymentFailed(data: Record<string, any>): Promise<void> {
+async function onPaymentFailed(
+  data: Record<string, any>,
+  transactionClient: PoolClient
+): Promise<void> {
   const bookingId = bookingIdFrom(data);
   if (!bookingId) return;
 
-  const booking = await repo.getBookingById(bookingId);
+  const booking = await repo.getBookingById(bookingId, transactionClient);
   if (!booking) return;
 
   // Never disturb a paid booking. A failure notice can arrive late, after another
   // signal already confirmed the money.
   if (booking.status === 'paid') return;
 
-  await repo.cancelBooking(booking.id);
+  await repo.cancelBooking(booking.id, transactionClient);
   console.log(`[webhook] released the hold on booking ${booking.id} after a failed payment.`);
 }
