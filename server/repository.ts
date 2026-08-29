@@ -32,6 +32,36 @@ const EXCLUSION_VIOLATION = '23P01';
 
 export type BookingStatus = 'pending' | 'paid' | 'cancelled';
 
+/**
+ * The time-based part of the inventory contract, kept pure for regression
+ * tests. The SQL predicates below use the same half-open rule: a pending hold
+ * is active strictly before its configured expiry, while a paid booking never
+ * expires.
+ */
+export function bookingBlocksInventory(
+  status: BookingStatus,
+  createdAt: Date | string | number | null,
+  now: Date | string | number = Date.now(),
+  holdMinutes = PRICING_CONFIG.pendingHoldMinutes
+): boolean {
+  if (status === 'paid') return true;
+  if (status !== 'pending' || createdAt === null) return false;
+
+  const createdAtMs = createdAt instanceof Date
+    ? createdAt.getTime()
+    : typeof createdAt === 'number'
+      ? createdAt
+      : Date.parse(createdAt);
+  const nowMs = now instanceof Date
+    ? now.getTime()
+    : typeof now === 'number'
+      ? now
+      : Date.parse(now);
+
+  return Number.isFinite(createdAtMs) && Number.isFinite(nowMs)
+    && createdAtMs > nowMs - holdMinutes * 60_000;
+}
+
 export interface OccupiedArea {
   pageNumber: number;
   x: number;

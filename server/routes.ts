@@ -419,6 +419,10 @@ export function createApiRouter(): Router {
     }
 
     try {
+      // The status poll is also an inventory refresh path. Expire stale holds
+      // before reading the booking so an abandoned checkout cannot keep the
+      // confirmation screen (or its paper state) stuck on "pending".
+      await repo.expireStalePendingBookings();
       const booking = await repo.getBookingById(bookingId);
       if (!booking) {
         res.status(404).json({ error: 'not-found', message: 'No such checkout.' });

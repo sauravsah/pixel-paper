@@ -21,7 +21,11 @@ import {
   type RefundPaymentSnapshot,
   type RefundProvider,
 } from '../server/dodo.ts';
-import { claimWebhookEvent, type RefundRecord } from '../server/repository.ts';
+import {
+  bookingBlocksInventory,
+  claimWebhookEvent,
+  type RefundRecord,
+} from '../server/repository.ts';
 import {
   processClaimedWebhook,
   processConflictRefund,
@@ -45,8 +49,14 @@ import {
   rectsOverlap,
   validateSelection,
 } from '../shared/geometry.ts';
+import { firstBlocker } from '../src/lib/selection.ts';
 
 const PAYMENT_EVENT_TIME = Date.parse('2026-01-01T00:00:00.000Z');
+const HOLD_TEST_NOW = Date.parse('2026-02-01T12:00:00.000Z');
+const HOLD_MS = CFG.pendingHoldMinutes * 60_000;
+
+const pendingBookingAt = (ageMs: number) =>
+  new Date(HOLD_TEST_NOW - ageMs).toISOString();
 
 const quoteAt = (page: number, x: number, y: number, w = 20, h = 20) =>
   calculateQuote(CFG, page, { x, y, width: w, height: h });
@@ -71,6 +81,55 @@ test('initial newspaper structure exposes front page plus four spreads', () => {
 
 test('base rate is one cent per logical Pixel Unit', () => {
   assert.equal(CFG.baseRate, 0.01);
+});
+
+test('an active pending hold blocks inventory', () => {
+  assert.equal(
+    bookingBlocksInventory('pending', pendingBookingAt(HOLD_MS - 1), HOLD_TEST_NOW),
+    true
+  );
+});
+
+test('an expired pending hold no longer blocks inventory', () => {
+  assert.equal(
+    bookingBlocksInventory('pending', pendingBookingAt(HOLD_MS), HOLD_TEST_NOW),
+    false
+  );
+});
+
+test('an abandoned checkout becomes available after the configured hold', () => {
+  const createdAt = pendingBookingAt(0);
+  assert.equal(bookingBlocksInventory('pending', createdAt, HOLD_TEST_NOW + HOLD_MS - 1), true);
+  assert.equal(bookingBlocksInventory('pending', createdAt, HOLD_TEST_NOW + HOLD_MS), false);
+});
+
+test('paid bookings remain permanently claimed after the hold window', () => {
+  assert.equal(
+    bookingBlocksInventory('paid', pendingBookingAt(HOLD_MS * 100), HOLD_TEST_NOW + HOLD_MS * 100),
+    true
+  );
+});
+
+test('concurrent claim attempts are both blocked by the same active hold', () => {
+  const occupied = [{
+    pageNumber: 1,
+    x: 10,
+    y: 28,
+    width: 10,
+    height: 10,
+    status: 'pending' as const,
+  }];
+  const candidate = { x: 10, y: 28, width: 10, height: 10 };
+
+  assert.ok(firstBlocker(candidate, occupied));
+  assert.ok(firstBlocker(candidate, occupied));
+});
+
+test('a new customer can claim the area after a pending hold expires', () => {
+  const occupied = bookingBlocksInventory('pending', pendingBookingAt(HOLD_MS), HOLD_TEST_NOW)
+    ? [{ pageNumber: 1, x: 10, y: 28, width: 10, height: 10, status: 'pending' as const }]
+    : [];
+  assert.equal(firstBlocker({ x: 10, y: 28, width: 10, height: 10 }, occupied), null);
 });
 
 test('same rectangle costs the same anywhere on the same page', () => {

@@ -89,7 +89,8 @@ function readEntry(): Entry {
   const checkout = params.get('checkout');
 
   return {
-    bookingId: checkout === 'success' ? params.get('booking') : null,
+    bookingId:
+      checkout === 'success' || checkout === 'cancelled' ? params.get('booking') : null,
     cancelled: checkout === 'cancelled',
     spaceId: params.get('space'),
   };
@@ -147,7 +148,7 @@ export default function App() {
     ENTRY.cancelled
       ? {
           tone: 'info',
-          text: 'Checkout cancelled. Nothing was charged and the space is back on the page.',
+          text: 'Checkout cancelled. Nothing was charged. The space will return automatically when the 20-minute hold expires.',
         }
       : null
   );
@@ -221,12 +222,14 @@ export default function App() {
     if (!config) return;
 
     const timer = window.setInterval(() => void refreshPaper(), REFRESH_MS);
-    const onFocus = () => void refreshPaper();
-    window.addEventListener('focus', onFocus);
+    const refreshOnReturn = () => void refreshPaper();
+    window.addEventListener('focus', refreshOnReturn);
+    window.addEventListener('pageshow', refreshOnReturn);
 
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', refreshOnReturn);
+      window.removeEventListener('pageshow', refreshOnReturn);
     };
   }, [config, refreshPaper]);
 
@@ -399,6 +402,14 @@ export default function App() {
     setBookingId(null);
     setIsCreatorOpen(false);
     setSelection(null);
+    void refreshPaper();
+  }, [refreshPaper]);
+
+  const handleCheckoutReleased = useCallback(() => {
+    setBookingId(null);
+    setIsCreatorOpen(false);
+    setSelection(null);
+    setNotice({ tone: 'info', text: 'The checkout hold expired. That space is available again.' });
     void refreshPaper();
   }, [refreshPaper]);
 
@@ -815,6 +826,7 @@ export default function App() {
           bookingId={bookingId}
           onViewSpace={handleViewSpace}
           onDismiss={handleDismissConfirmation}
+          onReleased={handleCheckoutReleased}
         />
       )}
     </div>

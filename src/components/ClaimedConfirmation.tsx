@@ -51,12 +51,15 @@ interface ClaimedConfirmationProps {
   /** Take the reader to the page their space is on and close this. */
   onViewSpace: (pageNumber: number) => void;
   onDismiss: () => void;
+  /** Close the confirmation and refresh inventory after an expired hold. */
+  onReleased: () => void;
 }
 
 export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
   bookingId,
   onViewSpace,
   onDismiss,
+  onReleased,
 }) => {
   const [status, setStatus] = useState<CheckoutStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,11 +82,15 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
       try {
         const next = await fetchCheckoutStatus(bookingId);
         if (cancelledEffect) return;
+        if (next.status === 'cancelled') {
+          // The server cancelled this booking because its 20-minute hold
+          // expired. Close immediately so the refreshed paper can be selected.
+          onReleased();
+          return;
+        }
         setStatus(next);
         setError(null);
-        if (next.status !== 'paid' && next.status !== 'cancelled') {
-          setAttempts((n) => n + 1);
-        }
+        if (next.status !== 'paid') setAttempts((n) => n + 1);
       } catch (err) {
         if (cancelledEffect) return;
         // A 404 here means the booking id does not match a booking — someone
@@ -104,7 +111,7 @@ export const ClaimedConfirmation: React.FC<ClaimedConfirmationProps> = ({
       cancelledEffect = true;
       window.clearTimeout(timer);
     };
-  }, [bookingId, attempts, paid, cancelled, takingLong]);
+  }, [bookingId, attempts, paid, cancelled, takingLong, onReleased]);
 
   // ---- A small celebration, once ------------------------------------------
   useEffect(() => {
