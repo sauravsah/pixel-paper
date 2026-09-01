@@ -270,7 +270,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
                 // the width by viewport height too — the whole spread and the nav row
                 // below it stay visible without scrolling. Falls back to full width on
                 // tall/narrow (mobile) viewports.
-                maxWidth: `min(100%, calc(82vh * ${(config.pageWidth * 2) / config.pageHeight}))`,
+                maxWidth: `min(95vw, calc((100vh - 112px) * ${(config.pageWidth * 2) / config.pageHeight}))`,
               }
             : undefined
         }

@@ -28,7 +28,16 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Menu, RefreshCw, Sparkles, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Loader2,
+  Minimize2,
+  RefreshCw,
+  PanelRight,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import type {
@@ -49,6 +58,7 @@ import { AdDetailModal } from './components/AdDetailModal.tsx';
 import { Broadsheet, viewForPage } from './components/Broadsheet.tsx';
 import { ClaimedConfirmation } from './components/ClaimedConfirmation.tsx';
 import { ModernSidebar } from './components/ModernSidebar.tsx';
+import { PaperToolbar } from './components/PaperToolbar.tsx';
 import { PixelMark, PixelWordmark } from './components/PixelMark.tsx';
 import { RightContextPanel } from './components/RightContextPanel.tsx';
 import { ThemeSwitcher } from './components/ThemeSwitcher.tsx';
@@ -131,6 +141,8 @@ export default function App() {
   // ---- Chrome and overlays ------------------------------------------------
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [lastOpenedDrawer, setLastOpenedDrawer] = useState<'pages' | 'details' | null>(null);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [detailAd, setDetailAd] = useState<PlacedAd | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -314,14 +326,34 @@ export default function App() {
     [refreshPaper]
   );
 
+  const handleClosePages = useCallback(() => {
+    setIsDrawerOpen(false);
+    setLastOpenedDrawer((active) => (active === 'pages' ? (isDetailsOpen ? 'details' : null) : active));
+  }, [isDetailsOpen]);
+
+  const handleCloseDetails = useCallback(() => {
+    setIsDetailsOpen(false);
+    setLastOpenedDrawer((active) => (active === 'details' ? (isDrawerOpen ? 'pages' : null) : active));
+  }, [isDrawerOpen]);
+
+  const handleToggleAbout = useCallback(() => {
+    if (isAboutOpen) {
+      setIsAboutOpen(false);
+      return;
+    }
+    setIsAboutOpen(true);
+    handleCloseDetails();
+  }, [handleCloseDetails, isAboutOpen]);
+
   const handleModeChange = useCallback((selectMode: boolean) => {
     setIsSelectMode(selectMode);
     setIsAboutOpen(false);
+    handleCloseDetails();
     // Buying is done against the real paper, never the demo's invented ads.
     if (selectMode) setDemoMode(false);
     // A blue rectangle sitting on the page in reading mode is just confusing.
     if (!selectMode) setSelection(null);
-  }, []);
+  }, [handleCloseDetails]);
 
   const handleEnterSelectMode = useCallback(() => handleModeChange(true), [handleModeChange]);
 
@@ -330,17 +362,47 @@ export default function App() {
   const handleToggleImmersive = useCallback(() => {
     setIsImmersive((on) => !on);
     setIsDrawerOpen(false);
+    setIsDetailsOpen(false);
+    setLastOpenedDrawer(null);
   }, []);
 
-  /** Escape leaves focus mode, mirroring the modal-close convention. */
+  const handleTogglePages = useCallback(() => {
+    if (isDrawerOpen) {
+      handleClosePages();
+      return;
+    }
+    setIsDrawerOpen(true);
+    setLastOpenedDrawer('pages');
+  }, [handleClosePages, isDrawerOpen]);
+
+  const handleToggleDetails = useCallback(() => {
+    if (isDetailsOpen) {
+      handleCloseDetails();
+      return;
+    }
+    setIsDetailsOpen(true);
+    setLastOpenedDrawer('details');
+  }, [handleCloseDetails, isDetailsOpen]);
+
+  /** Escape closes the active layer, mirroring the modal-close convention. */
   useEffect(() => {
-    if (!isImmersive) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsImmersive(false);
+      if (event.key !== 'Escape') return;
+      if (isImmersive) {
+        setIsImmersive(false);
+      } else if (lastOpenedDrawer === 'details' && isDetailsOpen) {
+        handleCloseDetails();
+      } else if (lastOpenedDrawer === 'pages' && isDrawerOpen) {
+        handleClosePages();
+      } else if (isDetailsOpen) {
+        handleCloseDetails();
+      } else if (isDrawerOpen) {
+        handleClosePages();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isImmersive]);
+  }, [handleCloseDetails, handleClosePages, isDetailsOpen, isDrawerOpen, isImmersive, lastOpenedDrawer]);
 
   /**
    * Fill the paper with example ads, or clear them again. Turning it on returns
@@ -359,7 +421,7 @@ export default function App() {
         setView(viewForPage(DEMO_PAGE));
         setNotice({
           tone: 'info',
-          text: 'Demo mode: these ads are examples, not real bookings. Turn it off for the live paper.',
+          text: 'Preview edition: these ads are examples, not real bookings. Turn it off for the live paper.',
         });
       }
       return next;
@@ -487,6 +549,8 @@ export default function App() {
   // otherwise whatever the server last reported. Only presentation reads this;
   // the buy flow and shared links still go through the real `paper`.
   const activePaper = demoMode && demoPaper ? demoPaper : paper;
+  const isPagesTopmost = isDrawerOpen && lastOpenedDrawer === 'pages';
+  const isDetailsTopmost = isDetailsOpen && lastOpenedDrawer === 'details';
 
   const panel = (
     <RightContextPanel
@@ -500,6 +564,7 @@ export default function App() {
       onOpenCreator={handleOpenCreator}
       onEnterSelectMode={handleEnterSelectMode}
       onClearSelection={() => setSelection(null)}
+      className="lg:w-full lg:border-l-0"
     />
   );
 
@@ -508,17 +573,8 @@ export default function App() {
       {/* ==================================================================
           MASTHEAD BAR
           ================================================================== */}
-      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-[#dcd6ec] bg-[#faf9fe]/95 px-3 py-2.5 backdrop-blur-md transition-colors duration-200 dark:border-[#232037] dark:bg-[#131120]/95 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={() => setIsDrawerOpen((open) => !open)}
-            className="cursor-pointer p-1.5 text-[#514c62] hover:text-[#191627] dark:text-zinc-400 dark:hover:text-white lg:hidden"
-            aria-label={isDrawerOpen ? 'Close menu' : 'Open menu'}
-          >
-            {isDrawerOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-
+      <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-[#dcd6ec] bg-[#faf9fe]/95 px-3 py-2.5 backdrop-blur-md transition-colors duration-200 dark:border-[#232037] dark:bg-[#131120]/95 lg:flex-nowrap sm:px-6">
+        <div className="order-1 flex min-w-0 flex-1 items-center gap-2 sm:gap-3 lg:flex-none">
           <button
             type="button"
             onClick={() => {
@@ -536,48 +592,49 @@ export default function App() {
           </button>
         </div>
 
-        <div className="hidden items-center gap-4 font-data text-xs md:flex">
-          <span className="flex items-center gap-1.5 rounded-xs border border-[#dcd6ec] bg-[#efebfa] px-2.5 py-1 dark:border-[#2a2740] dark:bg-[#1b1826]">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-            <span className="font-bold text-[#191627] dark:text-white">
-              Permanent digital newspaper
-            </span>
-          </span>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#6f6a80] dark:text-zinc-400">
-            {isSelectMode ? 'Pixel canvas' : 'Reading mode'}
-          </span>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <div className="order-2 flex shrink-0 items-center gap-2 sm:gap-3 lg:order-3">
           <button
             type="button"
             onClick={handleToggleDemo}
             aria-pressed={demoMode}
-            title="Preview the paper filled with example ads"
-            className={`hidden cursor-pointer items-center gap-1.5 rounded-xs px-3 py-1.5 font-ui text-xs font-black uppercase tracking-wider shadow-sm transition-all duration-200 sm:flex ${
+            title="Preview a filled newspaper edition"
+            className={`flex h-9 cursor-pointer items-center gap-1.5 rounded-xs border px-2.5 font-ui text-[10px] font-black uppercase tracking-wider shadow-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] dark:focus-visible:ring-[#a78bfa] ${
               demoMode
-                ? 'accent-button text-white'
-                : 'border border-[#dcd6ec] bg-white text-[#191627] hover:border-[#7c3aed] dark:border-[#2a2740] dark:bg-[#171526] dark:text-[#f2f0fb] dark:hover:border-[#a78bfa]'
+                ? 'accent-button border-transparent text-white'
+                : 'border-[#dcd6ec] bg-white text-[#191627] hover:border-[#7c3aed] dark:border-[#2a2740] dark:bg-[#171526] dark:text-[#f2f0fb] dark:hover:border-[#a78bfa]'
             }`}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span>{demoMode ? 'Exit demo' : 'Demo'}</span>
+            <span className="hidden min-[420px]:inline">{demoMode ? 'Exit preview' : 'Preview edition'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleModeChange(!isSelectMode)}
+            title={isSelectMode ? 'Return to reading mode' : 'Buy a space'}
             className={`flex cursor-pointer items-center gap-1.5 rounded-xs px-3 py-1.5 font-ui text-xs font-black uppercase tracking-wider shadow-sm transition-all duration-200 ${
               isSelectMode
                 ? 'accent-button text-white'
                 : 'bg-[#191627] text-[#faf9fe] hover:bg-black dark:bg-[#f2f0fb] dark:text-[#131120] dark:hover:bg-white'
             }`}
           >
-            {isSelectMode ? 'Read the paper' : 'Buy a space'}
+            <span className="sm:hidden">{isSelectMode ? 'Read' : 'Buy'}</span>
+            <span className="hidden sm:inline">{isSelectMode ? 'Read the paper' : 'Buy a space'}</span>
           </button>
 
           <ThemeSwitcher />
         </div>
+
+        <PaperToolbar
+          isSelectMode={isSelectMode}
+          isPagesOpen={isDrawerOpen}
+          isDetailsOpen={isDetailsOpen}
+          onModeChange={handleModeChange}
+          onTogglePages={handleTogglePages}
+          onToggleDetails={handleToggleDetails}
+          onToggleImmersive={handleToggleImmersive}
+          className="order-3 basis-full border-t border-[#e6e1f0] px-0 pt-1.5 dark:border-[#25223a] lg:order-2 lg:basis-auto lg:border-t-0 lg:px-0 lg:pt-0"
+        />
       </header>
 
       {/* ==================================================================
@@ -614,7 +671,7 @@ export default function App() {
       {/* ==================================================================
           THE PAPER
           ================================================================== */}
-      <div className="flex min-h-0 flex-1 lg:overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 lg:overflow-hidden">
         <ModernSidebar
           view={view}
           onViewChange={setView}
@@ -623,13 +680,17 @@ export default function App() {
           config={pricing}
           stats={activePaper.stats}
           isAboutOpen={isAboutOpen}
-          onToggleAbout={() => setIsAboutOpen((open) => !open)}
+          onToggleAbout={handleToggleAbout}
+          demoMode={demoMode}
+          onToggleDemo={handleToggleDemo}
           isDrawerOpen={isDrawerOpen}
-          onCloseDrawer={() => setIsDrawerOpen(false)}
+          isDetailsOpen={isDetailsOpen}
+          isTopmost={isPagesTopmost}
+          onCloseDrawer={handleClosePages}
         />
 
         <main className="flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
-          <div className="flex w-full flex-1 flex-col items-center p-3 sm:p-4 lg:px-3 lg:py-6">
+          <div className="flex w-full flex-1 flex-col items-center p-2 sm:p-3 lg:px-3 lg:py-3">
             {isAboutOpen ? (
               <AboutView
                 config={pricing}
@@ -640,7 +701,7 @@ export default function App() {
                 onBack={() => setIsAboutOpen(false)}
               />
             ) : isImmersive ? null : (
-              <div className="flex w-full max-w-[1600px] flex-col items-center gap-4">
+              <div className="flex w-full max-w-[1600px] flex-col items-center gap-1">
                 <Broadsheet
                   view={view}
                   onViewChange={setView}
@@ -657,21 +718,80 @@ export default function App() {
                   immersive={false}
                   onToggleImmersive={handleToggleImmersive}
                 />
+
+                {selection && !isCreatorOpen && !bookingId && (
+                  <div className="flex w-full items-center justify-between gap-3 border-t-2 border-[#191627] bg-[#faf9fe] px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] dark:border-[#332f45] dark:bg-[#131120] sm:px-4">
+                    <div className="min-w-0">
+                      <div className="font-data text-[10px] uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
+                        {selection.width} × {selection.height} Pixel Units · page {selection.pageNumber}
+                      </div>
+                      <div className="font-headline text-xl font-black leading-none text-[#191627] dark:text-white">
+                        {usd(selection.quote.totalPrice)}
+                        <span className="ml-1.5 font-data text-[9px] font-bold uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
+                          {selection.serverConfirmed ? 'confirmed' : 'estimate'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenCreator}
+                      disabled={
+                        selection.width < pricing.minSelectionWidth ||
+                        selection.height < pricing.minSelectionHeight
+                      }
+                      className="accent-button shrink-0 cursor-pointer rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#191627]"
+                    >
+                      Create your ad
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {/* On a narrow screen the pricing panel follows the paper instead of
-              squeezing it into a column too thin to read. */}
-          {!isAboutOpen && (
-            <div className="w-full border-t border-[#dcd6ec] dark:border-[#232037] lg:hidden">
-              {panel}
-            </div>
-          )}
         </main>
-
-        <div className="hidden shrink-0 overflow-y-auto lg:block">{panel}</div>
       </div>
+
+      <AnimatePresence>
+        {isDetailsOpen && !isImmersive && !isAboutOpen && (
+          <>
+            <motion.button
+              key="details-backdrop"
+              type="button"
+              aria-label="Close paper details"
+              onClick={handleCloseDetails}
+              className={`fixed inset-0 top-24 cursor-default bg-black/25 lg:top-14 lg:bg-transparent ${
+                isDetailsTopmost ? 'z-[54]' : 'z-40'
+              } ${isDrawerOpen ? 'md:left-[288px] md:right-[min(24rem,92vw)]' : ''}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <motion.aside
+              key="details-drawer"
+              aria-label="Paper details"
+              className={`fixed inset-y-0 right-0 top-24 w-[min(24rem,92vw)] overflow-y-auto border-l border-[#dcd6ec] bg-[#faf8ff] shadow-2xl lg:top-14 ${
+                isDetailsTopmost ? 'z-[55]' : 'z-50'
+              } dark:border-[#232037] dark:bg-[#100e18]`}
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ duration: reduceMotion ? 0 : FOCUS_DURATION, ease: FOCUS_EASE }}
+            >
+              <div className="sticky top-0 z-10 flex justify-end border-b border-[#e0dcf0] bg-[#faf8ff]/95 px-3 py-2 backdrop-blur dark:border-[#2a2740] dark:bg-[#100e18]/95">
+                <button
+                  type="button"
+                  onClick={handleCloseDetails}
+                  aria-label="Close paper details"
+                  className="cursor-pointer rounded-xs p-1.5 text-[#6f6a80] hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] dark:text-zinc-400 dark:hover:bg-white/10 dark:focus-visible:ring-[#a78bfa]"
+                >
+                  <PanelRight className="h-4 w-4" />
+                </button>
+              </div>
+              {panel}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       <footer className="border-t border-[#dcd6ec] px-4 py-4 dark:border-[#232037] sm:px-6">
         <div className="flex flex-col items-center justify-between gap-3 font-data text-[10px] uppercase tracking-wider text-[#6f6a80] sm:flex-row dark:text-zinc-500">
@@ -698,36 +818,6 @@ export default function App() {
           </nav>
         </div>
       </footer>
-
-      {/* ==================================================================
-          A SELECTION, ALWAYS REACHABLE ON MOBILE
-          ================================================================== */}
-      {selection && !isCreatorOpen && !bookingId && (
-        <div className="sticky bottom-0 z-30 flex items-center justify-between gap-3 border-t-2 border-[#191627] bg-[#faf9fe] px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-[#332f45] dark:bg-[#131120] lg:hidden">
-          <div className="min-w-0">
-            <div className="font-data text-[10px] uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
-              {selection.width} × {selection.height} Pixel Units · page {selection.pageNumber}
-            </div>
-            <div className="font-headline text-xl font-black leading-none text-[#191627] dark:text-white">
-              {usd(selection.quote.totalPrice)}
-              <span className="ml-1.5 font-data text-[9px] font-bold uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
-                {selection.serverConfirmed ? 'confirmed' : 'estimate'}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleOpenCreator}
-            disabled={
-              selection.width < pricing.minSelectionWidth ||
-              selection.height < pricing.minSelectionHeight
-            }
-            className="accent-button shrink-0 cursor-pointer rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Create your ad
-          </button>
-        </div>
-      )}
 
       {/* ==================================================================
           NOTICES
@@ -771,10 +861,10 @@ export default function App() {
             key="focus-overlay"
             role="dialog"
             aria-label="Focus reading mode"
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-[#f2effb] p-4 dark:bg-[#0b0a14]"
-            initial={{ opacity: 0, scale: reduceMotion ? 1 : 0.985 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: reduceMotion ? 1 : 0.985 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-[#f2effb] p-2 pt-10 dark:bg-[#0b0a14] sm:p-3 sm:pt-10"
+            initial={{ opacity: 0, y: reduceMotion ? 0 : 20, scale: reduceMotion ? 1 : 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: reduceMotion ? 0 : 20, scale: reduceMotion ? 1 : 0.96 }}
             transition={{ duration: reduceMotion ? 0 : FOCUS_DURATION, ease: FOCUS_EASE }}
           >
             <Broadsheet
@@ -793,14 +883,27 @@ export default function App() {
               immersive
               onToggleImmersive={handleToggleImmersive}
             />
+            {isSelectMode &&
+              selection &&
+              selection.width >= pricing.minSelectionWidth &&
+              selection.height >= pricing.minSelectionHeight && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreator}
+                  className="accent-button absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg"
+                >
+                  <span>Review space · {usd(selection.quote.totalPrice)}</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
             <button
               type="button"
               onClick={handleToggleImmersive}
-              aria-label="Exit focus mode"
-              title="Exit focus mode (Esc)"
-              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-[#dcd6ec] bg-[#faf9fe]/90 text-[#514c62] opacity-70 shadow-md backdrop-blur transition hover:text-[#191627] hover:opacity-100 dark:border-[#2a2740] dark:bg-[#131120]/90 dark:text-[#a49eb6] dark:hover:text-white"
+              aria-label="Exit expanded view"
+              title="Exit expanded view"
+              className="absolute right-3 top-3 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-[#dcd6ec] bg-[#faf9fe]/90 text-[#514c62] shadow-md backdrop-blur transition hover:text-[#191627] dark:border-[#2a2740] dark:bg-[#131120]/90 dark:text-[#a49eb6] dark:hover:text-white"
             >
-              <X className="h-5 w-5" />
+              <Minimize2 className="h-5 w-5" />
             </button>
           </motion.div>
         )}

@@ -429,7 +429,7 @@ export function createApiRouter(): Router {
         return;
       }
 
-      const ad = await repo.getAdForBooking(booking.id);
+      const ad = booking.status === 'paid' ? await repo.getAdForBooking(booking.id) : null;
 
       res.json({
         status: booking.status,

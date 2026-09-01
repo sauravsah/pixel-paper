@@ -31,6 +31,7 @@ interface RightContextPanelProps {
   onOpenCreator: () => void;
   onEnterSelectMode: () => void;
   onClearSelection: () => void;
+  className?: string;
 }
 
 export const RightContextPanel: React.FC<RightContextPanelProps> = ({
@@ -44,6 +45,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   onOpenCreator,
   onEnterSelectMode,
   onClearSelection,
+  className,
 }) => {
   const tooSmall = selection ? isBelowMinimum(config, selection) : false;
 
@@ -56,7 +58,9 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   );
 
   return (
-    <aside className="w-full border-l-0 border-[#dcd6ec] bg-[#faf8ff] dark:border-[#232037] dark:bg-[#100e18] lg:w-60 lg:border-l">
+    <aside
+      className={`w-full border-l-0 border-[#dcd6ec] bg-[#faf8ff] dark:border-[#232037] dark:bg-[#100e18] ${className ?? 'lg:w-60 lg:border-l'}`}
+    >
       <div className="space-y-5 p-4 lg:p-5">
         <VisitorTracker stats={visitorStats} />
 

@@ -15,7 +15,8 @@
  */
 
 import React from 'react';
-import { BookOpen, Info, MousePointerClick, X } from 'lucide-react';
+import { BookOpen, Info, MousePointerClick, Sparkles, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 
 import type { PricingConfig } from '../../shared/pricing-config.ts';
 import type { NewspaperStats } from '../types.ts';
@@ -32,8 +33,12 @@ interface ModernSidebarProps {
   stats: NewspaperStats;
   isAboutOpen: boolean;
   onToggleAbout: () => void;
-  /** Mobile drawer. On desktop the sidebar is always there. */
+  demoMode: boolean;
+  onToggleDemo: () => void;
+  /** The pages/menu drawer is available at every viewport size. */
   isDrawerOpen: boolean;
+  isDetailsOpen: boolean;
+  isTopmost: boolean;
   onCloseDrawer: () => void;
 }
 
@@ -46,6 +51,8 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
   stats,
   isAboutOpen,
   onToggleAbout,
+  demoMode,
+  onToggleDemo,
   onCloseDrawer,
 }) => {
   const claimedFraction =
@@ -68,7 +75,7 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
         <button
           type="button"
           onClick={onCloseDrawer}
-          className="-mr-1 -mt-1 shrink-0 rounded-xs p-1.5 text-[#6f6a80] hover:bg-black/5 dark:text-zinc-400 dark:hover:bg-white/10 lg:hidden"
+          className="-mr-1 -mt-1 shrink-0 cursor-pointer rounded-xs p-1.5 text-[#6f6a80] hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] dark:text-zinc-400 dark:hover:bg-white/10 dark:focus-visible:ring-[#a78bfa]"
           aria-label="Close menu"
         >
           <X className="h-4 w-4" />
@@ -205,6 +212,22 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
         <button
           type="button"
           onClick={() => {
+            onToggleDemo();
+            onCloseDrawer();
+          }}
+          aria-pressed={demoMode}
+          className={`flex w-full cursor-pointer items-center gap-2 rounded-xs px-3 py-2 font-data text-[10px] font-bold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] dark:focus-visible:ring-[#a78bfa] ${
+            demoMode
+              ? 'accent-button text-white'
+              : 'text-[#514c62] hover:bg-black/5 dark:text-zinc-400 dark:hover:bg-white/5'
+          }`}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          <span>{demoMode ? 'Exit preview' : 'Preview edition'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             onToggleAbout();
             onCloseDrawer();
           }}
@@ -224,24 +247,37 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
 
 export const ModernSidebar: React.FC<ModernSidebarProps> = (props) => (
   <>
-    {/* Desktop: part of the layout. */}
-    <aside className="hidden w-52 shrink-0 border-r border-[#dcd6ec] bg-[#faf8ff] dark:border-[#232037] dark:bg-[#100e18] lg:block">
-      <SidebarBody {...props} />
-    </aside>
-
-    {/* Mobile: a drawer over the paper. */}
-    {props.isDrawerOpen && (
-      <div className="fixed inset-0 z-40 lg:hidden">
-        <button
-          type="button"
-          onClick={props.onCloseDrawer}
-          className="absolute inset-0 bg-black/60 backdrop-blur-xs"
-          aria-label="Close menu"
-        />
-        <aside className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] border-r border-[#dcd6ec] bg-[#faf8ff] shadow-2xl dark:border-[#232037] dark:bg-[#100e18]">
-          <SidebarBody {...props} />
-        </aside>
-      </div>
-    )}
+    {/* The pages/menu drawer stays on demand so the paper owns the default surface. */}
+    <AnimatePresence>
+      {props.isDrawerOpen && (
+        <div
+          className={`pointer-events-none fixed inset-0 ${props.isTopmost ? 'z-[55]' : 'z-50'}`}
+        >
+          <motion.button
+            type="button"
+            onClick={props.onCloseDrawer}
+            className={`absolute inset-0 top-24 cursor-default bg-transparent lg:top-14 ${
+              props.isTopmost ? 'pointer-events-auto' : 'pointer-events-none'
+            } ${props.isDetailsOpen ? 'md:left-[288px] md:right-[min(24rem,92vw)]' : ''}`}
+            aria-label="Close pages menu"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          />
+          <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pages menu"
+            className="pointer-events-auto absolute inset-y-0 left-0 top-24 z-10 w-[288px] max-w-[88vw] border-r border-[#dcd6ec] bg-[#faf8ff] shadow-2xl dark:border-[#232037] dark:bg-[#100e18] lg:top-14"
+            initial={{ x: '-100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '-100%' }}
+            transition={{ duration: 0.3, ease: [0.35, 0, 0.15, 1] }}
+          >
+            <SidebarBody {...props} />
+          </motion.aside>
+        </div>
+      )}
+    </AnimatePresence>
   </>
 );

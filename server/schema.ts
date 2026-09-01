@@ -289,4 +289,63 @@ CREATE TABLE IF NOT EXISTS visitor_sessions (
 
 CREATE INDEX IF NOT EXISTS visitor_sessions_last_seen_idx
   ON visitor_sessions (last_seen_at);
+
+
+-- ---------------------------------------------------------------------------
+-- Supabase security hardening.
+--
+-- The browser talks to the server API, not directly to these tables. Keep the
+-- payment, ownership, and webhook tables closed to Data API roles; the server
+-- uses the privileged database connection for its atomic booking/webhook work.
+-- Visitor presence is also written by that server endpoint, so it needs no
+-- public insert policy and cannot be used as an unauthenticated write surface.
+-- ---------------------------------------------------------------------------
+ALTER TABLE visitor_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pixel_bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE visitor_sessions, orders, pixel_bookings, webhook_events
+  FROM PUBLIC, anon, authenticated;
+
+-- Make the private-table boundary explicit to the Supabase advisor as well as
+-- to Postgres's default-deny RLS behavior. The server's postgres/service_role
+-- connection is intentionally not included in these policies.
+DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON visitor_sessions;
+CREATE POLICY "Pixel Press: deny direct API access"
+  ON visitor_sessions FOR ALL TO anon, authenticated
+  USING (false) WITH CHECK (false);
+
+DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON orders;
+CREATE POLICY "Pixel Press: deny direct API access"
+  ON orders FOR ALL TO anon, authenticated
+  USING (false) WITH CHECK (false);
+
+DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON pixel_bookings;
+CREATE POLICY "Pixel Press: deny direct API access"
+  ON pixel_bookings FOR ALL TO anon, authenticated
+  USING (false) WITH CHECK (false);
+
+DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON webhook_events;
+CREATE POLICY "Pixel Press: deny direct API access"
+  ON webhook_events FOR ALL TO anon, authenticated
+  USING (false) WITH CHECK (false);
+
+-- btree_gist backs pixel_bookings_no_overlap and is relocatable. Keep the
+-- extension installed, but move its operators/opclasses out of public so the
+-- exposed schema contains application tables only. The conditional keeps
+-- repeated explicit migrations safe after the first move.
+CREATE SCHEMA IF NOT EXISTS extensions;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_extension e
+      JOIN pg_namespace n ON n.oid = e.extnamespace
+     WHERE e.extname = 'btree_gist'
+       AND n.nspname = 'public'
+  ) THEN
+    EXECUTE 'ALTER EXTENSION btree_gist SET SCHEMA extensions';
+  END IF;
+END $$;
 `;

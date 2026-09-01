@@ -146,7 +146,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ config, onStartBuying, onB
       {/* ---- Nothing here is a placeholder ---- */}
       <section className="rounded-xs border border-dashed border-[#dcd6ec] bg-[#faf8ff] p-5 dark:border-[#2a2740] dark:bg-[#141221]">
         <p className="font-editorial text-sm leading-relaxed text-[#514c62] dark:text-[#a49eb6]">
-          Every published space is backed by database inventory. Demo placements are only examples
+          Every published space is backed by database inventory. Preview placements are only examples
           for review mode; production placements should appear after verified payment and moderation.
         </p>
       </section>
