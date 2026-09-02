@@ -28,8 +28,9 @@
  *   backward (v → v-1):  leaf = left slot,  hinge on its right edge, 0° →  180°
  *
  * Check it against the diagram: turning forward from the cover puts page 1's back
- * where page 2 belongs. Turning back from pages 4–5 puts page 4's back where page
- * 3 belongs. Every one of the six transitions falls out of the same rule.
+ * where page 2 belongs. Turning back from any spread puts the left page's back
+ * where the previous right page belongs. Every transition follows the same rule,
+ * regardless of the configured page count.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -45,7 +46,7 @@ interface PageSlots {
   right: number | null;
 }
 
-function buildViews(totalPages: number): PageSlots[] {
+export function buildViews(totalPages: number): PageSlots[] {
   const views: PageSlots[] = [{ left: null, right: 1 }];
   for (let page = 2; page <= totalPages; page += 2) {
     views.push({ left: page, right: page + 1 <= totalPages ? page + 1 : null });
@@ -69,16 +70,16 @@ function stageOffset(view: number, views = DEFAULT_VIEWS): string {
 }
 
 /** A short human label for the view, used by the navigation chrome. */
-export function viewLabel(view: number): string {
-  const slots = DEFAULT_VIEWS[view];
+export function viewLabel(view: number, totalPages = PRICING_CONFIG.totalPages): string {
+  const slots = buildViews(totalPages)[view];
   if (!slots) return '';
   if (slots.left === null) return `Page ${slots.right}`;
   if (slots.right === null) return `Page ${slots.left}`;
   return `Pages ${slots.left}–${slots.right}`;
 }
 
-export function pagesInView(view: number): number[] {
-  const slots = DEFAULT_VIEWS[view];
+export function pagesInView(view: number, totalPages = PRICING_CONFIG.totalPages): number[] {
+  const slots = buildViews(totalPages)[view];
   if (!slots) return [];
   return [slots.left, slots.right].filter((p): p is number => p !== null);
 }
@@ -91,8 +92,8 @@ export function pagesInView(view: number): number[] {
  * Falls back to the cover rather than throwing, because a bad page number in a
  * URL should land somewhere sensible.
  */
-export function viewForPage(pageNumber: number): number {
-  const index = DEFAULT_VIEWS.findIndex(
+export function viewForPage(pageNumber: number, totalPages = PRICING_CONFIG.totalPages): number {
+  const index = buildViews(totalPages).findIndex(
     (slots) => slots.left === pageNumber || slots.right === pageNumber
   );
   return index === -1 ? 0 : index;
@@ -400,7 +401,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
         type="button"
         onClick={() => turn('backward')}
         disabled={!canBack || flipping}
-        aria-label={canBack ? `Turn back to ${viewLabel(view - 1)}` : 'Already at the front page'}
+        aria-label={canBack ? `Turn back to ${viewLabel(view - 1, config.totalPages)}` : 'Already at the front page'}
         className="group absolute left-0 top-1/2 z-30 hidden -translate-y-1/2 items-center justify-center p-2 disabled:pointer-events-none disabled:opacity-0 sm:flex"
       >
         <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[#dcd6ec] bg-[#faf9fe]/90 text-[#191627] shadow-md backdrop-blur transition group-hover:scale-105 group-hover:border-[#191627] dark:border-[#2a2740] dark:bg-[#131120]/90 dark:text-[#f2f0fb] dark:group-hover:border-[#f2f0fb]">
@@ -413,7 +414,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
         onClick={() => turn('forward')}
         disabled={!canForward || flipping}
         aria-label={
-          canForward ? `Turn to ${viewLabel(view + 1)}` : 'Already at the last page'
+          canForward ? `Turn to ${viewLabel(view + 1, config.totalPages)}` : 'Already at the last page'
         }
         className="group absolute right-0 top-1/2 z-30 hidden -translate-y-1/2 items-center justify-center p-2 disabled:pointer-events-none disabled:opacity-0 sm:flex"
       >
@@ -446,7 +447,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
               type="button"
               role="tab"
               aria-selected={index === view}
-              aria-label={viewLabel(index)}
+              aria-label={viewLabel(index, config.totalPages)}
               disabled={flipping}
               onClick={() => {
                 if (index === view || flipping) return;
@@ -475,7 +476,7 @@ export const Broadsheet: React.FC<BroadsheetProps> = ({
         </button>
 
         <span className="ml-1 font-data text-[10px] font-bold uppercase tracking-[0.25em] text-[#6f6a80] dark:text-[#a49eb6]">
-          {viewLabel(view)}
+          {viewLabel(view, config.totalPages)}
         </span>
 
         {/* Focus mode is a reading feature — buying needs the pricing panel this

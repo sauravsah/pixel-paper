@@ -3,10 +3,10 @@
  * ===================================
  *
  * The schema lives here as a string rather than a .sql file so that esbuild
- * bundles it straight into dist/server.cjs. There is no runtime file to lose.
+ * bundles it into the server artifact. There is no runtime SQL file to lose.
  *
- * Every statement is idempotent. Running the migration repeatedly is safe and is
- * exactly what happens on every server boot.
+ * Every statement is idempotent. The explicit migration command can be run
+ * repeatedly without duplicating tables, pages, or constraints.
  *
  * PAYMENT DATA
  * ------------
@@ -45,7 +45,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 
 -- ---------------------------------------------------------------------------
--- newspaper_pages — the six permanent pages. Never more, never fewer.
+-- newspaper_pages — the configured permanent pages.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS newspaper_pages (
   id           SERIAL PRIMARY KEY,
@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS pixel_bookings (
 
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- The exact deadline for this pending hold. Paid rows never expire.
+  expires_at               TIMESTAMPTZ,
   paid_at                  TIMESTAMPTZ,
 
   -- Generated, never written by the application: the pixel spans this booking
@@ -137,8 +139,22 @@ END $$;
 CREATE INDEX IF NOT EXISTS pixel_bookings_page_status_idx
   ON pixel_bookings (page_number, status);
 
+-- Existing databases predate the explicit hold deadline. Backfill only pending
+-- rows; paid and cancelled history is intentionally untouched.
+ALTER TABLE pixel_bookings
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+UPDATE pixel_bookings
+   SET expires_at = created_at + make_interval(mins => 20)
+ WHERE status = 'pending'
+   AND expires_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS pixel_bookings_pending_idx
   ON pixel_bookings (created_at)
+  WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS pixel_bookings_pending_expiry_idx
+  ON pixel_bookings (expires_at)
   WHERE status = 'pending';
 
 CREATE INDEX IF NOT EXISTS pixel_bookings_session_idx
@@ -301,11 +317,12 @@ CREATE INDEX IF NOT EXISTS visitor_sessions_last_seen_idx
 -- public insert policy and cannot be used as an unauthenticated write surface.
 -- ---------------------------------------------------------------------------
 ALTER TABLE visitor_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE advertisements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pixel_bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE visitor_sessions, orders, pixel_bookings, webhook_events
+REVOKE ALL ON TABLE visitor_sessions, advertisements, orders, pixel_bookings, webhook_events
   FROM PUBLIC, anon, authenticated;
 
 -- Make the private-table boundary explicit to the Supabase advisor as well as
@@ -314,6 +331,15 @@ REVOKE ALL ON TABLE visitor_sessions, orders, pixel_bookings, webhook_events
 DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON visitor_sessions;
 CREATE POLICY "Pixel Press: deny direct API access"
   ON visitor_sessions FOR ALL TO anon, authenticated
+  USING (false) WITH CHECK (false);
+
+-- Advertisements are public only through the server's paid-and-approved join.
+-- Keep the raw table private so a pending or cancelled creative cannot be read
+-- through the Supabase Data API.
+DROP POLICY IF EXISTS "Public can read approved advertisements" ON advertisements;
+DROP POLICY IF EXISTS "Pixel Paper: deny direct advertisement access" ON advertisements;
+CREATE POLICY "Pixel Paper: deny direct advertisement access"
+  ON advertisements FOR ALL TO anon, authenticated
   USING (false) WITH CHECK (false);
 
 DROP POLICY IF EXISTS "Pixel Press: deny direct API access" ON orders;

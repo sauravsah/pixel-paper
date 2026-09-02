@@ -62,6 +62,10 @@ const visitorHeartbeatLimiter = createRateLimiter({
 function resolveBaseUrl(req: Request): string {
   if (env.publicBaseUrl) return env.publicBaseUrl.replace(/\/+$/, '');
 
+  if (env.isProduction) {
+    throw new Error('PUBLIC_BASE_URL is required in production.');
+  }
+
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
   const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
 
@@ -76,7 +80,7 @@ function requireDatabase(res: Response): boolean {
 
   res.status(503).json({
     error: 'not-configured',
-    message: 'The newspaper is not connected to its database yet. DATABASE_URL is missing.',
+    message: 'The newspaper is not connected to its database yet. Database configuration is incomplete.',
   });
   return false;
 }
@@ -110,17 +114,16 @@ export function createApiRouter(): Router {
 
   router.get('/health', async (_req: Request, res: Response) => {
     let database = false;
-    let databaseError: string | undefined;
 
     if (isDatabaseConfigured()) {
       try {
         await pingDatabase();
         database = true;
       } catch (err: any) {
-        databaseError = err?.message || 'Database is unreachable.';
+        console.error('[api] health database check failed:', err?.message || 'unknown error');
       }
     } else {
-      databaseError = 'DATABASE_URL is missing.';
+      console.error('[api] health database check skipped: database configuration is incomplete.');
     }
 
     const payments = isDodoConfigured();
@@ -132,7 +135,6 @@ export function createApiRouter(): Router {
       database,
       payments,
       webhook,
-      ...(databaseError ? { databaseError } : {}),
       time: new Date().toISOString(),
     });
   });

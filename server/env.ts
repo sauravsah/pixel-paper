@@ -25,6 +25,7 @@ export interface Env {
   nodeEnv: string;
   isProduction: boolean;
   databaseUrl: string | undefined;
+  databaseSslCa: string | undefined;
   dodoApiKey: string | undefined;
   dodoWebhookKey: string | undefined;
   dodoProductId: string | undefined;
@@ -49,16 +50,30 @@ function cleanEnvironment(value: string | undefined): DodoEnvironment {
   return clean(value) === 'live_mode' ? 'live_mode' : 'test_mode';
 }
 
+function cleanPublicBaseUrl(value: string | undefined): string | undefined {
+  const candidate = clean(value);
+  if (!candidate) return undefined;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) return undefined;
+    return candidate.replace(/\/+$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
 export const env: Env = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   databaseUrl: clean(process.env.DATABASE_URL),
+  databaseSslCa: clean(process.env.DATABASE_SSL_CA),
   dodoApiKey: clean(process.env.DODO_PAYMENTS_API_KEY),
   dodoWebhookKey: clean(process.env.DODO_PAYMENTS_WEBHOOK_KEY),
   dodoProductId: clean(process.env.DODO_PRODUCT_ID),
   dodoEnvironment: cleanEnvironment(process.env.DODO_PAYMENTS_ENVIRONMENT),
-  publicBaseUrl: clean(process.env.PUBLIC_BASE_URL),
+  publicBaseUrl: cleanPublicBaseUrl(process.env.PUBLIC_BASE_URL),
 };
 
 export interface ReadinessReport {
@@ -68,17 +83,34 @@ export interface ReadinessReport {
   missing: string[];
 }
 
+export function isLocalDatabaseUrl(connectionString = env.databaseUrl): boolean {
+  if (!connectionString) return false;
+  try {
+    const { hostname } = new URL(connectionString);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/** Remote PostgreSQL connections require an explicitly supplied trusted CA. */
+export function hasVerifiedDatabaseTlsConfig(): boolean {
+  return Boolean(env.databaseUrl && (isLocalDatabaseUrl() || env.databaseSslCa));
+}
+
 /** What is configured and what is still missing. Drives the startup banner. */
 export function readiness(): ReadinessReport {
   const missing: string[] = [];
 
   if (!env.databaseUrl) missing.push('DATABASE_URL');
+  else if (!hasVerifiedDatabaseTlsConfig()) missing.push('DATABASE_SSL_CA');
   if (!env.dodoApiKey) missing.push('DODO_PAYMENTS_API_KEY');
   if (!env.dodoProductId) missing.push('DODO_PRODUCT_ID');
   if (!env.dodoWebhookKey) missing.push('DODO_PAYMENTS_WEBHOOK_KEY');
+  if (env.isProduction && !env.publicBaseUrl) missing.push('PUBLIC_BASE_URL');
 
   return {
-    databaseReady: Boolean(env.databaseUrl),
+    databaseReady: hasVerifiedDatabaseTlsConfig(),
     paymentsReady: Boolean(env.dodoApiKey && env.dodoProductId),
     webhookReady: Boolean(env.dodoWebhookKey),
     missing,
@@ -118,6 +150,10 @@ export function printStartupBanner(): void {
     console.log('    Supabase dashboard > your project > Connect > ORMs / Postgres');
     console.log('    Copy the "Connection string" (URI). It looks like:');
     console.log('    postgresql://postgres.PROJECTREF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres');
+    console.log('');
+  } else if (!hasVerifiedDatabaseTlsConfig()) {
+    console.log('  DATABASE_SSL_CA');
+    console.log('    Add the Supabase/provider CA certificate in PEM form for verified TLS.');
     console.log('');
   }
 

@@ -245,6 +245,22 @@ export default function App() {
     };
   }, [config, refreshPaper]);
 
+  /** Refresh exactly when the server says the next pending hold expires. */
+  useEffect(() => {
+    if (!paper) return;
+
+    const expiries = paper.occupied
+      .filter((area) => area.status === 'pending' && area.expiresAt)
+      .map((area) => Date.parse(area.expiresAt as string))
+      .filter((time) => Number.isFinite(time));
+    if (expiries.length === 0) return;
+
+    const nextExpiry = Math.min(...expiries);
+    const refreshDelay = Math.max(0, nextExpiry - Date.now()) + 100;
+    const timer = window.setTimeout(() => void refreshPaper(), refreshDelay);
+    return () => window.clearTimeout(timer);
+  }, [paper, refreshPaper]);
+
   /** Tidy the query string so a refresh is a plain visit. */
   useEffect(() => {
     if (!ENTRY.bookingId && !ENTRY.cancelled && !ENTRY.spaceId) return;
@@ -262,9 +278,9 @@ export default function App() {
       return;
     }
 
-    setView(viewForPage(ad.pageNumber));
+    setView(viewForPage(ad.pageNumber, config?.pricing.totalPages));
     setDetailAd(ad);
-  }, [pendingSpaceId, paper]);
+  }, [config?.pricing.totalPages, pendingSpaceId, paper]);
 
   /** Notices are transient by nature. */
   useEffect(() => {
@@ -418,7 +434,7 @@ export default function App() {
         setSelection(null);
         setIsAboutOpen(false);
         // Bring the reader to the one page the demo fills.
-        setView(viewForPage(DEMO_PAGE));
+        setView(viewForPage(DEMO_PAGE, config?.pricing.totalPages));
         setNotice({
           tone: 'info',
           text: 'Preview edition: these ads are examples, not real bookings. Turn it off for the live paper.',
@@ -426,7 +442,7 @@ export default function App() {
       }
       return next;
     });
-  }, []);
+  }, [config?.pricing.totalPages]);
 
   const handleOpenCreator = useCallback(() => {
     if (!selection) return;
@@ -454,10 +470,10 @@ export default function App() {
       setIsAboutOpen(false);
       setIsSelectMode(false);
       setSelection(null);
-      setView(viewForPage(pageNumber));
+      setView(viewForPage(pageNumber, config?.pricing.totalPages));
       void refreshPaper();
     },
-    [refreshPaper]
+    [config?.pricing.totalPages, refreshPaper]
   );
 
   const handleDismissConfirmation = useCallback(() => {

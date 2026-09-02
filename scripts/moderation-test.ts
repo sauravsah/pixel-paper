@@ -305,12 +305,19 @@ test('isLoopback recognises loopback in the spellings Node hands us', () => {
   }
 });
 
-test('clientIp prefers the first x-forwarded-for hop, then the socket address', () => {
+test('clientIp uses Express trusted-proxy IP and ignores raw forwarded headers', () => {
   const withForwarded = {
+    ip: '203.0.113.5',
     headers: { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' },
     socket: { remoteAddress: '10.1.1.1' },
   } as unknown as Request;
   assert.equal(clientIp(withForwarded), '203.0.113.5');
+
+  const untrustedForwarded = {
+    headers: { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' },
+    socket: { remoteAddress: '10.1.1.1' },
+  } as unknown as Request;
+  assert.equal(clientIp(untrustedForwarded), '10.1.1.1');
 
   const socketOnly = {
     headers: {},
@@ -319,6 +326,7 @@ test('clientIp prefers the first x-forwarded-for hop, then the socket address', 
   assert.equal(clientIp(socketOnly), '198.51.100.9');
 
   const bracketedV6 = {
+    ip: '2606:4700::1111',
     headers: { 'x-forwarded-for': '[2606:4700::1111]' },
     socket: {},
   } as unknown as Request;

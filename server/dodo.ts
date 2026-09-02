@@ -138,6 +138,10 @@ export async function createCheckoutSession(
         amount: booking.amountCents,
       },
     ],
+    billing_currency: 'USD',
+    feature_flags: {
+      allow_currency_selection: false,
+    },
     // Everything the webhook needs to correlate the payment with this booking.
     // Values must be strings.
     metadata: {

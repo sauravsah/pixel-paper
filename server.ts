@@ -27,6 +27,9 @@ async function startServer(): Promise<void> {
   const app = express();
 
   app.disable('x-powered-by');
+  // Render is the single trusted reverse proxy in front of this service.
+  // Express can then derive req.ip from the proxy's normalized address chain.
+  app.set('trust proxy', 1);
 
   // ---------------------------------------------------------------------------
   // Dodo webhook. Raw body, mounted first. Do not move.
@@ -78,7 +81,13 @@ async function startServer(): Promise<void> {
   // ---------------------------------------------------------------------------
   if (env.isProduction) {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false, dotfiles: 'deny' }));
+    // The server bundle and source map live outside dist, but keep these names
+    // explicitly unavailable if a proxy or future asset layout changes.
+    app.get(
+      ['/server.cjs', '/server.cjs.map', '/build/server.cjs', '/build/server.cjs.map'],
+      (_req, res) => res.sendStatus(404)
+    );
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

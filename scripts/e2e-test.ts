@@ -32,10 +32,14 @@ import { Webhook } from 'standardwebhooks';
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
 import { calculateQuote } from '../shared/pricing.ts';
+import { inventoryTopForPage } from '../shared/geometry.ts';
 import { env } from '../server/env.ts';
 import { closePool, isDatabaseConfigured, query } from '../server/db.ts';
 
-const BASE = `http://localhost:${env.port}`;
+const E2E_BASE_URL = String(process.env.E2E_BASE_URL ?? '').trim().replace(/\/+$/, '');
+const E2E_DATABASE_URL = String(process.env.E2E_DATABASE_URL ?? '').trim();
+const E2E_DATABASE_SSL_CA = String(process.env.E2E_DATABASE_SSL_CA ?? '').trim();
+const BASE = E2E_BASE_URL;
 
 /** Every booking this script creates is tagged so cleanup can find it. */
 const TEST_TAG = 'E2E-SELFTEST';
@@ -107,7 +111,8 @@ async function findFreeRect(
         !(x + width <= o.x || o.x + o.width <= x || y + height <= o.y || o.y + o.height <= y)
     );
 
-  for (let y = 0; y + height <= PRICING_CONFIG.pageHeight; y += 20) {
+  const top = inventoryTopForPage(PRICING_CONFIG, page);
+  for (let y = top; y + height <= PRICING_CONFIG.inventoryBottom; y += 20) {
     for (let x = 0; x + width <= PRICING_CONFIG.pageWidth; x += 20) {
       if (!hits(x, y)) return { x, y, width, height };
     }
@@ -126,6 +131,7 @@ function signedWebhook(
   bookingId: string,
   amountCents: number,
   eventId: string,
+  checkoutSessionId: string,
   paymentId = `pay_selftest_${eventId}`
 ) {
   const payload = JSON.stringify({
@@ -134,9 +140,11 @@ function signedWebhook(
     timestamp: new Date().toISOString(),
     data: {
       payment_id: paymentId,
+      checkout_session_id: checkoutSessionId,
       total_amount: amountCents,
       currency: 'USD',
       status: 'succeeded',
+      product_cart: [{ product_id: env.dodoProductId, quantity: 1 }],
       customer: { email: AD.buyerEmail },
       metadata: { bookingId },
     },
@@ -172,6 +180,29 @@ async function main(): Promise<void> {
 
   // -------------------------------------------------------------------------
   section('Preconditions');
+
+  if (
+    !E2E_BASE_URL ||
+    !/^https?:\/\//i.test(E2E_BASE_URL) ||
+    /pixelpaper\.lol|onrender\.com/i.test(E2E_BASE_URL) ||
+    !E2E_DATABASE_URL ||
+    process.env.E2E_ALLOW_DATABASE_WRITES !== 'true' ||
+    (env.databaseUrl && env.databaseUrl === E2E_DATABASE_URL)
+  ) {
+    console.error('');
+    console.error('  Refusing to run database-writing E2E tests.');
+    console.error('  Set E2E_BASE_URL, E2E_DATABASE_URL, and E2E_ALLOW_DATABASE_WRITES=true');
+    console.error('  for a separate non-production test server and database.');
+    console.error('');
+    process.exitCode = 1;
+    return;
+  }
+
+  // The server env module is loaded before this script can select the isolated
+  // database. The pool is lazy, so replacing this value here is safe and occurs
+  // before the first query.
+  env.databaseUrl = E2E_DATABASE_URL;
+  if (E2E_DATABASE_SSL_CA) env.databaseSslCa = E2E_DATABASE_SSL_CA;
 
   const health = await api('GET', '/api/health').catch(() => null);
   if (!health || health.status !== 200) {
@@ -240,10 +271,10 @@ async function main(): Promise<void> {
     !configText.includes('postgres'),
     'the database URL appeared in the config response'
   );
-  check('there are exactly 6 pages', config.json.pricing?.totalPages === 6);
+  check('there are exactly 9 pages', config.json.pricing?.totalPages === 9);
 
   const pages = await query<{ n: string }>('SELECT count(*)::text AS n FROM newspaper_pages');
-  check('database holds exactly 6 pages', pages[0]?.n === '6', `found ${pages[0]?.n}`);
+  check('database holds exactly 9 pages', pages[0]?.n === '9', `found ${pages[0]?.n}`);
 
   // -------------------------------------------------------------------------
   section('Pricing is decided by the server');
@@ -396,7 +427,19 @@ async function main(): Promise<void> {
   check('the forgery attempts changed nothing', stillPending[0]?.status === 'pending');
 
   const eventId = `evt_selftest_${Date.now()}`;
-  const { payload, headers } = signedWebhook(bookingId, expected.amountCents, eventId);
+  const sessionRows = await query<{ stripe_session_id: string }>(
+    'SELECT stripe_session_id FROM pixel_bookings WHERE id = $1',
+    [bookingId]
+  );
+  const checkoutSessionId = sessionRows[0]?.stripe_session_id ?? '';
+  check('the booking stores its provider checkout session id', Boolean(checkoutSessionId));
+
+  const { payload, headers } = signedWebhook(
+    bookingId,
+    expected.amountCents,
+    eventId,
+    checkoutSessionId
+  );
   const accepted = await postWebhook(payload, headers);
   check('a correctly signed webhook is accepted', accepted.status === 200, accepted.text);
 
@@ -444,7 +487,12 @@ async function main(): Promise<void> {
   check('still exactly one booking', counts[0]?.bookings === '1');
 
   // A different event id for the same, already-paid booking must also not double up.
-  const second = signedWebhook(bookingId, expected.amountCents, `evt_selftest_b_${Date.now()}`);
+  const second = signedWebhook(
+    bookingId,
+    expected.amountCents,
+    `evt_selftest_b_${Date.now()}`,
+    checkoutSessionId
+  );
   await postWebhook(second.payload, second.headers);
   const afterSecond = await query<{ n: string }>(
     'SELECT count(*)::text AS n FROM orders WHERE booking_id = $1',
@@ -615,7 +663,11 @@ async function main(): Promise<void> {
       const evt = signedWebhook(
         secondBuy.json.bookingId,
         secondBuy.json.quote.amountCents,
-        `evt_selftest_c_${Date.now()}`
+        `evt_selftest_c_${Date.now()}`,
+        (await query<{ stripe_session_id: string }>(
+          'SELECT stripe_session_id FROM pixel_bookings WHERE id = $1',
+          [secondBuy.json.bookingId]
+        ))[0]?.stripe_session_id ?? ''
       );
       await postWebhook(evt.payload, evt.headers);
 

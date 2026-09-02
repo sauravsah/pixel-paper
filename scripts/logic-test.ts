@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import {
   hasValidFullDiscountEvidence,
   hasVerifiedFullDiscountEvidence,
+  isProviderPaymentValid,
   isProviderAmountAcceptable,
   paymentAmountsForOrder,
   TransientProviderLookupError,
@@ -487,6 +488,43 @@ test('full-price provider amount is accepted', () => {
     actualAmountCents: 275,
     discountAmountCents: 0,
   });
+});
+
+test('successful provider payment must match USD, product, session, and identity', () => {
+  const payment = {
+    status: 'succeeded',
+    payment_id: 'pay_valid',
+    checkout_session_id: 'cs_valid',
+    currency: 'USD',
+    product_cart: [{ product_id: 'pdt_pixel_paper', quantity: 1 }],
+  };
+  const expected = {
+    currency: 'usd',
+    productId: 'pdt_pixel_paper',
+    checkoutSessionId: 'cs_valid',
+  };
+
+  assert.equal(isProviderPaymentValid(payment, expected), true);
+  assert.equal(isProviderPaymentValid({ ...payment, currency: 'INR' }, expected), false);
+  assert.equal(isProviderPaymentValid({ ...payment, status: 'processing' }, expected), false);
+  assert.equal(
+    isProviderPaymentValid({ ...payment, checkout_session_id: 'cs_other' }, expected),
+    false
+  );
+  assert.equal(
+    isProviderPaymentValid(
+      { ...payment, product_cart: [{ product_id: 'pdt_other', quantity: 1 }] },
+      expected
+    ),
+    false
+  );
+  assert.equal(isProviderPaymentValid({ ...payment, payment_id: '' }, expected), false);
+});
+
+test('wrong currency and malformed provider totals are rejected', () => {
+  assert.equal(isProviderAmountAcceptable(180, 180, false), true);
+  assert.equal(isProviderAmountAcceptable(180, 180.5, false), false);
+  assert.equal(isProviderAmountAcceptable(180, Number.POSITIVE_INFINITY, false), false);
 });
 
 test('a verified 100% percentage discount can authorize a zero payment', async () => {

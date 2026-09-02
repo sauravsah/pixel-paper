@@ -30,6 +30,7 @@ import type { PoolClient } from 'pg';
 
 import * as repo from './repository.ts';
 import { isDatabaseConfigured, lockRefund } from './db.ts';
+import { env } from './env.ts';
 import {
   constructWebhookEvent,
   hasVerifiedFullDiscount,
@@ -39,6 +40,7 @@ import {
 } from './dodo.ts';
 import {
   isProviderAmountAcceptable,
+  isProviderPaymentValid,
   paymentAmountsForOrder,
 } from './payment-validation.ts';
 
@@ -223,11 +225,24 @@ async function onPaymentSucceeded(
     return;
   }
 
-  const paymentId = typeof data.payment_id === 'string' ? data.payment_id : null;
+  const paymentId = typeof data.payment_id === 'string' && data.payment_id.length > 0
+    ? data.payment_id
+    : null;
 
   const booking = await repo.getBookingById(bookingId, transactionClient);
   if (!booking) {
     console.error(`[webhook] no booking for id ${bookingId}.`);
+    return;
+  }
+
+  if (!booking.stripeSessionId || !env.dodoProductId || !isProviderPaymentValid(data, {
+    currency: 'usd',
+    productId: env.dodoProductId,
+    checkoutSessionId: booking.stripeSessionId,
+  })) {
+    console.error(
+      `[webhook] payment identity/status mismatch for booking ${bookingId}; no pixels claimed.`
+    );
     return;
   }
 
@@ -261,10 +276,7 @@ async function onPaymentSucceeded(
   // difference between these linked records.
   const recordedAmounts = paymentAmountsForOrder(booking.amountCents, validFullDiscount);
 
-  const currency =
-    typeof data.currency === 'string' && data.currency
-      ? data.currency.toLowerCase()
-      : booking.currency;
+  const currency = data.currency.toLowerCase();
   const buyerEmail =
     (typeof data?.customer?.email === 'string' ? data.customer.email : null) ??
     booking.buyerEmail ??

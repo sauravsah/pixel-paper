@@ -15,6 +15,34 @@ export interface ProviderDiscountRecord {
   expires_at?: unknown;
 }
 
+export interface ProviderPaymentExpectations {
+  currency: string;
+  productId: string;
+  checkoutSessionId: string;
+}
+
+/** Validate the provider facts that must accompany a successful payment event. */
+export function isProviderPaymentValid(
+  data: Record<string, unknown>,
+  expected: ProviderPaymentExpectations
+): boolean {
+  if (data.status !== 'succeeded') return false;
+
+  const currency = typeof data.currency === 'string' ? data.currency.toLowerCase() : '';
+  if (!currency || currency !== expected.currency.toLowerCase()) return false;
+
+  if (typeof data.payment_id !== 'string' || data.payment_id.length === 0) return false;
+  if (data.checkout_session_id !== expected.checkoutSessionId) return false;
+
+  if (!Array.isArray(data.product_cart) || data.product_cart.length === 0) return false;
+  return data.product_cart.some((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const product = item as { product_id?: unknown; quantity?: unknown };
+    return product.product_id === expected.productId
+      && product.quantity === 1;
+  });
+}
+
 /** A provider lookup failed in a way that should cause webhook retry. */
 export class TransientProviderLookupError extends Error {
   override readonly cause: unknown;
@@ -159,7 +187,7 @@ export function isProviderAmountAcceptable(
   validFullDiscount: boolean
 ): boolean {
   if (!Number.isInteger(expectedAmountCents) || expectedAmountCents < 0) return false;
-  if (!Number.isFinite(receivedAmountCents) || receivedAmountCents < 0) return false;
+  if (!Number.isSafeInteger(receivedAmountCents) || receivedAmountCents < 0) return false;
   if (receivedAmountCents === 0) return validFullDiscount;
   return receivedAmountCents >= expectedAmountCents;
 }

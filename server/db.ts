@@ -2,7 +2,7 @@
  * PIXEL PAPER — DATABASE CONNECTION
  * ========================================
  *
- * Owns the connection pool, runs the migration, and seeds the six pages.
+ * Owns the connection pool and the explicit migration command.
  *
  * The pool is created lazily so the newspaper still boots and serves pages when
  * DATABASE_URL has not been set yet — it simply reports that it has no bookings.
@@ -13,7 +13,7 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 
 import { PRICING_CONFIG } from '../shared/pricing-config.ts';
-import { env } from './env.ts';
+import { env, hasVerifiedDatabaseTlsConfig, isLocalDatabaseUrl } from './env.ts';
 import { SCHEMA_SQL } from './schema.ts';
 
 /**
@@ -26,30 +26,31 @@ let pool: Pool | null = null;
 let migrated = false;
 
 export function isDatabaseConfigured(): boolean {
-  return Boolean(env.databaseUrl);
+  return hasVerifiedDatabaseTlsConfig();
 }
 
 /**
- * Managed Postgres (Supabase, Neon, RDS) terminates TLS with a chain Node does
- * not carry in its default trust store, so certificate verification is relaxed
- * for remote hosts. The connection is still encrypted. Local Postgres needs no
- * TLS at all.
+ * Local Postgres needs no TLS. Remote Postgres must provide its trusted CA in
+ * DATABASE_SSL_CA; refusing an unverified certificate is safer than silently
+ * accepting a man-in-the-middle connection.
  */
 function sslOptionsFor(connectionString: string) {
-  try {
-    const { hostname } = new URL(connectionString);
-    const isLocal =
-      hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-    return isLocal ? undefined : { rejectUnauthorized: false };
-  } catch {
-    return { rejectUnauthorized: false };
+  if (isLocalDatabaseUrl(connectionString)) return undefined;
+  if (!env.databaseSslCa) {
+    throw new Error('DATABASE_SSL_CA is required for verified remote PostgreSQL TLS.');
   }
+  return { ca: env.databaseSslCa, rejectUnauthorized: true };
 }
 
 export function getPool(): Pool {
   if (!env.databaseUrl) {
     throw new Error(
       'DATABASE_URL is not set. Add it to .env.local and restart the server.'
+    );
+  }
+  if (!hasVerifiedDatabaseTlsConfig()) {
+    throw new Error(
+      'DATABASE_SSL_CA is required for verified remote PostgreSQL TLS. Add the provider CA and restart the server.'
     );
   }
 
@@ -137,12 +138,12 @@ export async function lockRefund(client: PoolClient, paymentId: string): Promise
 }
 
 /**
- * Create the schema and seed the six pages.
+ * Create the schema and seed the configured pages.
  *
- * Safe to run on every boot: the schema is written to be idempotent, and the
- * seed reconciles page geometry with the current config instead of inserting
- * duplicates. No bookings, advertisements or orders are ever created here — the
- * newspaper starts genuinely empty and only real payments fill it.
+ * The schema is written to be idempotent, and the seed reconciles page geometry
+ * with the current config instead of inserting duplicates. This is an explicit
+ * operational command, not part of server startup. No bookings, advertisements
+ * or orders are ever created here — only real payments fill the newspaper.
  */
 export async function migrate(): Promise<void> {
   if (migrated) return;

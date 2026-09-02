@@ -12,13 +12,10 @@
  * --------------------------------------
  * It caps how many times a single client IP may hit `POST /api/checkout` in a
  * window. It does NOT touch `/api/quote` (called on every drag, by design) or any
- * read route. The client IP is read from `x-forwarded-for` (the header Render and
- * other proxies set), falling back to the socket address — the same
- * proxy-header-first approach `resolveBaseUrl` already uses. That header is
- * client-influenced, so a determined attacker rotating it can evade the cap; this
- * is best-effort by design, which is exactly what the requirement asks for. A
- * stricter setup would configure Express `trust proxy` and use `req.ip`, but that
- * is a server-wide behaviour change and is intentionally left alone here.
+ * read route. The client IP comes from Express's `req.ip`, after the server has
+ * configured Render as its trusted proxy, and falls back to the socket address.
+ * An arbitrary client-supplied forwarded header is therefore not accepted as
+ * the identity used by the limiter.
  *
  * LOOPBACK IS EXEMPT
  * ------------------
@@ -70,19 +67,15 @@ function normalizeIp(raw: string): string {
 }
 
 /**
- * The client's IP, proxy-header first.
+ * The client's IP after Express applies the trusted Render proxy boundary.
  *
- * Uses the first hop of `x-forwarded-for` — the same convention `resolveBaseUrl`
- * uses for the forwarded host/proto — then the raw socket address. Returns
- * `'unknown'` only if neither is present, so a missing address collapses to a
+ * `req.ip` is derived from the configured proxy trust rule; an untrusted client
+ * cannot select an arbitrary forwarded address. Returns `'unknown'` only if
+ * neither Express nor the socket has an address, so missing data collapses to a
  * single shared bucket rather than slipping the limiter entirely.
  */
 export function clientIp(req: Request): string {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  if (forwarded) return normalizeIp(forwarded);
-
-  const socket = req.socket?.remoteAddress || '';
-  return normalizeIp(socket) || 'unknown';
+  return normalizeIp(req.ip || req.socket?.remoteAddress || '') || 'unknown';
 }
 
 /** Drop keys whose most recent hit has fallen out of the window; then enforce the size cap. */

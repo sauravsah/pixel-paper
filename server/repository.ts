@@ -108,6 +108,7 @@ export interface BookingRecord {
   stripePaymentIntentId: string | null;
   buyerEmail: string | null;
   createdAt: string;
+  expiresAt: string | null;
   paidAt: string | null;
 }
 
@@ -145,6 +146,7 @@ function toBooking(row: Record<string, any>): BookingRecord {
     stripePaymentIntentId: row.stripe_payment_intent_id ?? null,
     buyerEmail: row.buyer_email ?? null,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : row.expires_at ?? null,
     paidAt: row.paid_at instanceof Date ? row.paid_at.toISOString() : row.paid_at ?? null,
   };
 }
@@ -154,7 +156,7 @@ const BOOKING_COLUMNS = `
   price_per_pixel, effective_price, amount_cents, currency,
   page_multiplier, position_multiplier, status,
   stripe_session_id, stripe_payment_intent_id, buyer_email,
-  created_at, paid_at
+  created_at, expires_at, paid_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -175,7 +177,7 @@ export async function expireStalePendingBookings(): Promise<number> {
     `UPDATE pixel_bookings
         SET status = 'cancelled', updated_at = now()
       WHERE status = 'pending'
-        AND created_at < now() - make_interval(mins => $1)
+        AND COALESCE(expires_at, created_at + make_interval(mins => $1)) <= now()
       RETURNING id`,
     [PRICING_CONFIG.pendingHoldMinutes]
   );
@@ -195,10 +197,10 @@ export async function expireStalePendingBookings(): Promise<number> {
  */
 export async function listOccupiedAreas(): Promise<OccupiedArea[]> {
   const rows = await query<Record<string, any>>(
-    `SELECT page_number, x, y, width, height, status
+    `SELECT page_number, x, y, width, height, status, expires_at
        FROM pixel_bookings
       WHERE status = 'paid'
-         OR (status = 'pending' AND created_at > now() - make_interval(mins => $1))
+         OR (status = 'pending' AND COALESCE(expires_at, created_at + make_interval(mins => $1)) > now())
       ORDER BY page_number, y, x`,
     [PRICING_CONFIG.pendingHoldMinutes]
   );
@@ -210,6 +212,7 @@ export async function listOccupiedAreas(): Promise<OccupiedArea[]> {
     width: Number(row.width),
     height: Number(row.height),
     status: row.status,
+    expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : row.expires_at ?? null,
   }));
 }
 
@@ -340,7 +343,7 @@ async function findConflict(
         AND ($6::uuid IS NULL OR id <> $6::uuid)
         AND (
               status = 'paid'
-              OR (status = 'pending' AND created_at > now() - make_interval(mins => $7))
+              OR (status = 'pending' AND COALESCE(expires_at, created_at + make_interval(mins => $7)) > now())
             )
       LIMIT 1`,
     [
@@ -420,8 +423,9 @@ export async function createPendingBooking(
       `INSERT INTO pixel_bookings
          (page_number, x, y, width, height, pixel_count,
           price_per_pixel, effective_price, amount_cents,
-          page_multiplier, position_multiplier, status, buyer_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12)
+          page_multiplier, position_multiplier, status, expires_at, buyer_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending',
+               now() + make_interval(mins => $12), $13)
        RETURNING ${BOOKING_COLUMNS}`,
       [
         input.pageNumber,
@@ -435,6 +439,7 @@ export async function createPendingBooking(
         input.amountCents,
         input.pageMultiplier,
         input.positionMultiplier,
+        PRICING_CONFIG.pendingHoldMinutes,
         input.buyerEmail,
       ]
     );

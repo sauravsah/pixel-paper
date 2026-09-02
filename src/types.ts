@@ -43,6 +43,8 @@ export interface SiteConfig {
 export interface OccupiedArea extends Rect {
   pageNumber: number;
   status: 'paid' | 'pending';
+  /** The server-side deadline for a pending hold; paid areas have no expiry. */
+  expiresAt?: string | null;
 }
 
 /**

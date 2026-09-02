@@ -55,7 +55,9 @@ pay with Dodo's test-mode card details (see the Dodo docs); the confirmation
 screen waits for the webhook and the space appears on the page.
 
 For a production build, `npm run build` compiles the client into `dist/` and
-bundles the server into `dist/server.cjs`; `npm start` runs it.
+bundles the server into `build/server.cjs`; `npm start` runs it. Only `dist/`
+is exposed as a public static directory; the server bundle and source map stay
+outside it.
 
 ## Deploy to Render
 
@@ -76,10 +78,11 @@ The one server both builds and serves the site; there is nothing else to stand u
    ```
 
 2. **Create the Blueprint.** In Render: **New → Blueprint**, pick the repository.
-   Render reads `render.yaml` and offers one web service. It will ask for the four
+   Render reads `render.yaml` and offers one web service. It will ask for the five
    values marked `sync: false` — paste them in (they are never committed):
 
    - `DATABASE_URL` — the same Supabase pooler string from `.env.local`.
+   - `DATABASE_SSL_CA` — the Supabase/provider CA certificate in PEM form.
    - `DODO_PAYMENTS_API_KEY` — your Dodo API key.
    - `DODO_PRODUCT_ID` — the id of your pay-what-you-want product.
    - `DODO_PAYMENTS_WEBHOOK_KEY` — leave a placeholder for now; step 4 replaces it.
@@ -87,6 +90,8 @@ The one server both builds and serves the site; there is nothing else to stand u
    (`DODO_PAYMENTS_ENVIRONMENT` is set to `test_mode` in `render.yaml` itself, so a
    Blueprint deploy never charges real cards by accident.) Run the explicit
    `npm run migrate` step against this database before the first application start.
+   For a live deployment, change that environment setting deliberately in the
+   deployment configuration and use matching live Dodo credentials.
    Then deploy. When the health
    check at `/api/health` goes green the site is up at
    `https://YOUR-APP.onrender.com`. (On the free plan the instance sleeps when idle
@@ -123,13 +128,15 @@ npm run lint    # tsc --noEmit
 npm run test:e2e   # the full purchase path; needs `npm run dev` in another terminal
 ```
 
-The end-to-end script needs all four values, and refuses to run unless the server
-is in Dodo test mode — it can confirm bookings via signed synthetic events, so it
-must never be pointed at a live deployment. It creates a booking, signs a fake
-`payment.succeeded` event with your webhook key, posts it to the running server,
-and checks that the pixels became unavailable and that replaying the same event a
-second time changes nothing. It also fires two overlapping checkouts at once to
-confirm only one survives, and deletes everything it created on the way out.
+The database-writing end-to-end script is deliberately isolated. It requires
+`E2E_BASE_URL`, `E2E_DATABASE_URL`, and `E2E_ALLOW_DATABASE_WRITES=true`, rejects
+the production hosts and the configured application database, and optionally
+uses `E2E_DATABASE_SSL_CA`. It can confirm bookings via signed synthetic events,
+so it must never be pointed at a live deployment. It creates a booking, signs a
+fake `payment.succeeded` event with the test webhook key, posts it to the running
+server, checks that the pixels became unavailable, and verifies replay behavior.
+It also fires two overlapping checkouts at once to confirm only one survives,
+and deletes everything it created on the way out.
 
 ## How the money and the pixels line up
 
@@ -162,8 +169,8 @@ Pending bookings hold their pixels for a few minutes and are then released
 automatically, so an abandoned checkout does not take a rectangle out of
 circulation.
 
-The current runtime schema has five tables: `newspaper_pages`, `pixel_bookings`,
-`advertisements`, `orders`, and `webhook_events`. Supabase is used as the hosted
+The current runtime schema has six tables: `newspaper_pages`, `pixel_bookings`,
+`advertisements`, `orders`, `webhook_events`, and `visitor_sessions`. Supabase is used as the hosted
 Postgres database only for now; Auth, Storage, and the deferred foundation schema
 are intentionally outside the production path.
 

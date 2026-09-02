@@ -2,10 +2,10 @@
 # Spec: https://render.com/docs/blueprint-spec
 #
 # One service builds the client into dist/ and bundles the server into
-# dist/server.cjs, then runs that bundle. The same process serves both the API
+# build/server.cjs, then runs that bundle. The same process serves both the API
 # and the built SPA — server.ts switches on NODE_ENV=production to serve dist/.
 #
-# The four secrets below are declared with `sync: false`: their VALUES are not
+# The five secrets below are declared with `sync: false`: their VALUES are not
 # stored in this file or in git. Render prompts for them once in the dashboard
 # when the Blueprint is first applied, and remembers them thereafter.
 services:
@@ -28,6 +28,11 @@ services:
       # secret) so a Blueprint deploy never accidentally charges real cards.
       - key: DODO_PAYMENTS_ENVIRONMENT
         value: test_mode
+      - key: PUBLIC_BASE_URL
+        value: https://pixelpaper.lol
+      # Supabase's CA certificate is required for verified PostgreSQL TLS.
+      - key: DATABASE_SSL_CA
+        sync: false
       # PORT is intentionally omitted — Render injects it and the server reads it.
       # Values entered in the Render dashboard, never committed:
       - key: DATABASE_URL

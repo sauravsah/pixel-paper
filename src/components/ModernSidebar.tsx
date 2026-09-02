@@ -4,9 +4,8 @@
  *
  * Mode, pages, and how much of the paper is gone.
  *
- * The page list has four entries because the paper has four views, not six —
- * pages 2 and 3 are one spread and you cannot look at one without the other. A
- * list of six would be a list of things that are not separately reachable.
+ * The page list is derived from the configured paper because pages 2 and 3 are
+ * one spread and you cannot look at one without the other.
  *
  * There are no section names here. No "AI page", no "Startup page". A page is a
  * page; what ends up on it is whatever people bought, and sorting buyers into
@@ -21,7 +20,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { PricingConfig } from '../../shared/pricing-config.ts';
 import type { NewspaperStats } from '../types.ts';
 import { pixels as fmtPixels, rate as fmtRate } from '../lib/selection.ts';
-import { VIEW_COUNT, viewLabel } from './Broadsheet.tsx';
+import { buildViews, viewLabel } from './Broadsheet.tsx';
 import { PixelMark, PixelWordmark } from './PixelMark.tsx';
 
 interface ModernSidebarProps {
@@ -127,7 +126,7 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
           Pages
         </h2>
         <nav className="space-y-1">
-          {Array.from({ length: VIEW_COUNT }).map((_, index) => (
+          {buildViews(config.totalPages).map((_, index) => (
             <button
               key={index}
               type="button"
@@ -149,7 +148,7 @@ const SidebarBody: React.FC<ModernSidebarProps> = ({
                     : 'text-[#514c62] dark:text-zinc-400'
                 }`}
               >
-                {viewLabel(index)}
+                {viewLabel(index, config.totalPages)}
               </span>
               {index === view && (
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#7c3aed] dark:bg-[#a78bfa]" />
