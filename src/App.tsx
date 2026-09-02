@@ -560,6 +560,11 @@ export default function App() {
   }
 
   const pricing = config.pricing;
+  const canCreateAd = Boolean(
+    selection &&
+      selection.width >= pricing.minSelectionWidth &&
+      selection.height >= pricing.minSelectionHeight
+  );
 
   // What the paper renders from: the demo's invented ads while demo mode is on,
   // otherwise whatever the server last reported. Only presentation reads this;
@@ -735,8 +740,8 @@ export default function App() {
                   onToggleImmersive={handleToggleImmersive}
                 />
 
-                {selection && !isCreatorOpen && !bookingId && (
-                  <div className="flex w-full items-center justify-between gap-3 border-t-2 border-[#191627] bg-[#faf9fe] px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] dark:border-[#332f45] dark:bg-[#131120] sm:px-4">
+                {isSelectMode && selection && canCreateAd && !isCreatorOpen && !bookingId && !isDetailsOpen && (
+                  <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-[56] flex items-center justify-between gap-3 rounded-xs border-2 border-[#191627] bg-[#faf9fe] px-3 py-2.5 shadow-2xl dark:border-[#332f45] dark:bg-[#131120] sm:inset-x-auto sm:right-4 sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:w-[min(24rem,calc(100vw-2rem))] sm:px-4">
                     <div className="min-w-0">
                       <div className="font-data text-[10px] uppercase tracking-wider text-[#6f6a80] dark:text-zinc-500">
                         {selection.width} × {selection.height} Pixel Units · page {selection.pageNumber}
@@ -751,11 +756,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleOpenCreator}
-                      disabled={
-                        selection.width < pricing.minSelectionWidth ||
-                        selection.height < pricing.minSelectionHeight
-                      }
-                      className="accent-button shrink-0 cursor-pointer rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#191627]"
+                      className="accent-button shrink-0 cursor-pointer rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#191627]"
                     >
                       Create your ad
                     </button>
@@ -899,19 +900,16 @@ export default function App() {
               immersive
               onToggleImmersive={handleToggleImmersive}
             />
-            {isSelectMode &&
-              selection &&
-              selection.width >= pricing.minSelectionWidth &&
-              selection.height >= pricing.minSelectionHeight && (
-                <button
-                  type="button"
-                  onClick={handleOpenCreator}
-                  className="accent-button absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg"
-                >
-                  <span>Review space · {usd(selection.quote.totalPrice)}</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              )}
+            {isSelectMode && selection && canCreateAd && !isCreatorOpen && !bookingId && (
+              <button
+                type="button"
+                onClick={handleOpenCreator}
+                className="accent-button absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xs px-4 py-2.5 font-ui text-xs font-black uppercase tracking-wider text-white shadow-lg"
+              >
+                <span>Review space · {usd(selection.quote.totalPrice)}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={handleToggleImmersive}
