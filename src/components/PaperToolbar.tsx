@@ -1,10 +1,14 @@
 import React from 'react';
 import { BookOpen, Maximize2, MousePointerClick, PanelLeft, PanelRight } from 'lucide-react';
 
+import type { VisitorStats } from '../types.ts';
+import { VisitorTracker } from './VisitorTracker.tsx';
+
 interface PaperToolbarProps {
   isSelectMode: boolean;
   isPagesOpen: boolean;
   isDetailsOpen: boolean;
+  visitorStats: VisitorStats | null;
   onModeChange: (selectMode: boolean) => void;
   onTogglePages: () => void;
   onToggleDetails: () => void;
@@ -17,13 +21,14 @@ export const PaperToolbar: React.FC<PaperToolbarProps> = ({
   isSelectMode,
   isPagesOpen,
   isDetailsOpen,
+  visitorStats,
   onModeChange,
   onTogglePages,
   onToggleDetails,
   onToggleImmersive,
   className,
 }) => (
-  <div className={`flex min-w-0 items-center justify-between gap-2 ${className ?? ''}`}>
+  <div className={`flex min-w-0 flex-wrap items-center justify-between gap-2 sm:flex-nowrap ${className ?? ''}`}>
     <div className="flex min-w-0 items-center gap-1.5">
       <button
         type="button"
@@ -73,16 +78,22 @@ export const PaperToolbar: React.FC<PaperToolbarProps> = ({
       </div>
     </div>
 
+    <div
+      className={`${isSelectMode ? 'hidden' : 'flex'} order-3 min-w-0 basis-full justify-center sm:order-none sm:basis-auto sm:justify-normal`}
+    >
+      <VisitorTracker compact stats={visitorStats} />
+    </div>
+
     <div className="flex shrink-0 items-center gap-1.5">
       <button
         type="button"
         onClick={onToggleImmersive}
         aria-label="Expand newspaper"
         title="Expand newspaper"
-        className="accent-button flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xs border border-transparent px-2.5 font-data text-[10px] font-black uppercase tracking-wider text-white shadow-md transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0b0a14]"
+        className="accent-button flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-xs border border-transparent px-1.5 font-data text-[10px] font-black uppercase tracking-wider text-white shadow-md transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0b0a14] lg:h-9 lg:gap-1.5 lg:px-2.5"
       >
-        <Maximize2 className="h-4 w-4" />
-        <span className="hidden sm:inline">Expand newspaper</span>
+        <Maximize2 className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+        <span className="hidden lg:inline">Expand newspaper</span>
       </button>
 
       <button

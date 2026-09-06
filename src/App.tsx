@@ -650,6 +650,7 @@ export default function App() {
           isSelectMode={isSelectMode}
           isPagesOpen={isDrawerOpen}
           isDetailsOpen={isDetailsOpen}
+          visitorStats={visitorStats}
           onModeChange={handleModeChange}
           onTogglePages={handleTogglePages}
           onToggleDetails={handleToggleDetails}
