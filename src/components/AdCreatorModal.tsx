@@ -72,6 +72,14 @@ const EMPTY: AdDraft = {
   buyerEmail: '',
 };
 
+function websiteIconUrl(rawDestination: string): string {
+  const normalized = parseSafeUrl(rawDestination);
+  if (!normalized) return '';
+
+  const { origin } = new URL(normalized);
+  return `https://www.google.com/s2/favicons?sz=128&domain_url=${encodeURIComponent(origin)}`;
+}
+
 export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
   isOpen,
   selection,
@@ -93,11 +101,11 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
   // in a row does not keep switching itself off.
   const [logoOnly, setLogoOnly] = useState(false);
 
-  // The attached image lives in the draft as a data URL; this only holds the
-  // file's name for display and a handle to the (visually hidden) file input so
-  // Replace and Remove can drive it.
+  // The image may be an automatically fetched website icon or a data URL from a
+  // local file; this holds the manual file's name and drives the hidden input.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
+  const [imageSource, setImageSource] = useState<'auto' | 'manual' | 'removed'>('auto');
 
   // A fresh selection means a fresh form step, but the typed fields survive —
   // someone who picked the wrong rectangle should not have to retype their
@@ -119,6 +127,14 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose, submitting]);
+
+  useEffect(() => {
+    if (imageSource !== 'auto') return;
+
+    const iconUrl = websiteIconUrl(draft.destinationUrl);
+    setDraft((prev) => (prev.imageUrl === iconUrl ? prev : { ...prev, imageUrl: iconUrl }));
+    setImageName((prev) => (iconUrl ? null : prev));
+  }, [draft.destinationUrl, imageSource]);
 
   const set = <K extends keyof AdDraft>(key: K, value: AdDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -157,6 +173,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
         fail('The image must be a PNG, JPEG, GIF, WEBP or SVG file under 1 MB.');
         return;
       }
+      setImageSource('manual');
       setImageName(file.name);
       set('imageUrl', safe);
     };
@@ -165,6 +182,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
   };
 
   const handleImageRemove = () => {
+    setImageSource('removed');
     setImageName(null);
     set('imageUrl', '');
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -463,7 +481,7 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                           className="h-12 w-12 shrink-0 rounded-xs border border-[#e0dcf0] object-contain dark:border-[#332f45]"
                         />
                         <span className="min-w-0 flex-1 truncate font-data text-[11px] text-[#514c62] dark:text-zinc-300">
-                          {imageName ?? 'Selected image'}
+                          {imageSource === 'auto' ? 'Website icon' : imageName ?? 'Selected image'}
                         </span>
                         <button
                           type="button"
@@ -496,8 +514,9 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                     )}
                     <FieldError field="imageUrl" />
                     <p className="mt-1 font-data text-[10px] text-[#6f6a80] dark:text-zinc-500">
-                      Choose an image from your device — PNG, JPEG, GIF, WEBP or SVG, up to 1 MB.
-                      It becomes part of your ad.
+                      We’ll fetch the website icon automatically from your destination. Replace it
+                      with a PNG, JPEG, GIF, WEBP or SVG up to 1 MB if you prefer. It becomes part
+                      of your ad.
                     </p>
                   </div>
 
@@ -584,7 +603,10 @@ export const AdCreatorModal: React.FC<AdCreatorModalProps> = ({
                     required
                     maxLength={MAX_LENGTHS.url}
                     value={draft.destinationUrl}
-                    onChange={(e) => set('destinationUrl', e.target.value)}
+                    onChange={(e) => {
+                      setImageSource((current) => (current === 'manual' ? 'manual' : 'auto'));
+                      set('destinationUrl', e.target.value);
+                    }}
                     placeholder="https://myproject.com"
                     className={`${inputClass('destinationUrl')} font-data text-xs`}
                   />
