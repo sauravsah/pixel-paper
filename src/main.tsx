@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import { ThemeProvider } from './context/ThemeContext.tsx';
 import { LegalPage, type LegalPageKind } from './components/LegalPage.tsx';
+import { installUmami } from './lib/umami.ts';
 import './index.css';
 
 function legalPageForPath(pathname: string): LegalPageKind | null {
@@ -18,6 +19,8 @@ function Root() {
   const legalPage = legalPageForPath(window.location.pathname);
   return legalPage ? <LegalPage kind={legalPage} /> : <App />;
 }
+
+installUmami();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
